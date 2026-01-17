@@ -18,7 +18,8 @@
 - Default config path remains `~/.config/secretty/config.yaml` when built.
 
 ## Run
-- CLI compiles once Go is available; commands currently return \"not implemented\".
+- CLI compiles; `secretty`, `secretty shell`, and `secretty run` execute under a PTY.
+- Other subcommands remain placeholders.
 - Intended usage remains:
   - `secretty` (interactive shell under PTY)
   - `secretty run -- <cmd...>`
@@ -50,3 +51,4 @@
 
 ## Scratchpad
 - 2026-01-17: Stage 1 scaffold complete. Added Go module, Cobra CLI skeleton, config schema + defaults + validation, and Makefile. Config tests added under `internal/config`. Go toolchain not available on this machine to run checks.
+- 2026-01-17: Stage 2 PTY wrapper added (`internal/ptywrap`). `secretty`, `shell`, and `run` now execute commands under a PTY with exit code forwarding. Added PTY test and updated CLI wiring.

@@ -12,8 +12,8 @@ import (
 )
 
 const (
-	DefaultConfigVersion     = 1
-	defaultConfigRelPath     = "secretty/config.yaml"
+	DefaultConfigVersion       = 1
+	defaultConfigRelPath       = "secretty/config.yaml"
 	defaultPlaceholderTemplate = "\u27e6REDACTED:{type}\u27e7"
 	defaultBlockChar           = "\u2588"
 )
@@ -68,7 +68,7 @@ type StatusLine struct {
 
 // Masking configures masking strategies.
 type Masking struct {
-	BlockChar string `yaml:"block_char"`
+	BlockChar           string `yaml:"block_char"`
 	HexRandomSameLength struct {
 		Uppercase bool `yaml:"uppercase"`
 	} `yaml:"hex_random_same_length"`
@@ -112,13 +112,13 @@ const (
 
 // Rule represents a detection rule.
 type Rule struct {
-	Name            string        `yaml:"name"`
-	Enabled         bool          `yaml:"enabled"`
-	Type            RuleType      `yaml:"type"`
-	Action          types.Action  `yaml:"action"`
+	Name            string         `yaml:"name"`
+	Enabled         bool           `yaml:"enabled"`
+	Type            RuleType       `yaml:"type"`
+	Action          types.Action   `yaml:"action"`
 	Severity        types.Severity `yaml:"severity"`
-	Regex           *RegexRule    `yaml:"regex,omitempty"`
-	ContextKeywords []string      `yaml:"context_keywords,omitempty"`
+	Regex           *RegexRule     `yaml:"regex,omitempty"`
+	ContextKeywords []string       `yaml:"context_keywords,omitempty"`
 }
 
 // RegexRule configures regex-based detection.
@@ -202,11 +202,11 @@ func DefaultConfig() Config {
 		},
 		TypedDetectors: []TypedDetector{
 			{
-				Name:     "evm_private_key",
-				Enabled:  true,
-				Kind:     "EVM_PRIVATE_KEY",
-				Action:   types.ActionMask,
-				Severity: types.SeverityHigh,
+				Name:            "evm_private_key",
+				Enabled:         true,
+				Kind:            "EVM_PRIVATE_KEY",
+				Action:          types.ActionMask,
+				Severity:        types.SeverityHigh,
 				ContextKeywords: []string{"private_key", "--private-key", "secret", "sk="},
 			},
 		},

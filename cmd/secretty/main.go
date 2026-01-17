@@ -1,13 +1,16 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 
 	"github.com/spf13/cobra"
 
 	"github.com/suryansh-23/secretty/internal/config"
+	"github.com/suryansh-23/secretty/internal/ptywrap"
 	"github.com/suryansh-23/secretty/internal/types"
 )
 
@@ -16,10 +19,22 @@ type appState struct {
 	cfgFound bool
 }
 
+type exitCodeError struct {
+	code int
+}
+
+func (e *exitCodeError) Error() string {
+	return fmt.Sprintf("command exited with code %d", e.code)
+}
+
 func main() {
 	state := &appState{}
 	rootCmd := newRootCmd(state)
 	if err := rootCmd.Execute(); err != nil {
+		if exitErr, ok := err.(*exitCodeError); ok {
+			os.Exit(exitErr.code)
+		}
+		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
 }
@@ -50,7 +65,8 @@ func newRootCmd(state *appState) *cobra.Command {
 			return nil
 		},
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return cmd.Help()
+			command := defaultShellCommand()
+			return runWithPTY(cmd.Context(), command)
 		},
 	}
 
@@ -83,7 +99,17 @@ func newShellCmd() *cobra.Command {
 		Use:   "shell -- <shell>",
 		Short: "Start a protected interactive shell",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return errors.New("shell command not implemented yet")
+			var command *exec.Cmd
+			if cmd.ArgsLenAtDash() == -1 {
+				command = defaultShellCommand()
+			} else {
+				shellArgs := cmd.Flags().Args()
+				if len(shellArgs) == 0 {
+					return errors.New("shell requires a command after --")
+				}
+				command = exec.Command(shellArgs[0], shellArgs[1:]...)
+			}
+			return runWithPTY(cmd.Context(), command)
 		},
 	}
 }
@@ -93,7 +119,15 @@ func newRunCmd() *cobra.Command {
 		Use:   "run -- <cmd...>",
 		Short: "Run a command under a protected PTY",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return errors.New("run command not implemented yet")
+			if cmd.ArgsLenAtDash() == -1 {
+				return errors.New("run requires -- before the command")
+			}
+			runArgs := cmd.Flags().Args()
+			if len(runArgs) == 0 {
+				return errors.New("run requires a command after --")
+			}
+			command := exec.Command(runArgs[0], runArgs[1:]...)
+			return runWithPTY(cmd.Context(), command)
 		},
 	}
 }
@@ -134,4 +168,24 @@ func newDoctorCmd() *cobra.Command {
 			return errors.New("doctor command not implemented yet")
 		},
 	}
+}
+
+func defaultShellCommand() *exec.Cmd {
+	shell := os.Getenv("SHELL")
+	if shell == "" {
+		shell = "/bin/zsh"
+	}
+	return exec.Command(shell, "-l")
+}
+
+func runWithPTY(ctx context.Context, command *exec.Cmd) error {
+	command.Env = os.Environ()
+	exitCode, err := ptywrap.RunCommand(ctx, command, ptywrap.Options{RawMode: true})
+	if err != nil {
+		return err
+	}
+	if exitCode != 0 {
+		return &exitCodeError{code: exitCode}
+	}
+	return nil
 }
