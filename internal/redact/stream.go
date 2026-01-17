@@ -4,7 +4,9 @@ import (
 	"io"
 
 	"github.com/suryansh-23/secretty/internal/ansi"
+	"github.com/suryansh-23/secretty/internal/cache"
 	"github.com/suryansh-23/secretty/internal/config"
+	"github.com/suryansh-23/secretty/internal/types"
 )
 
 // Stream applies redaction to a byte stream and writes to an output.
@@ -15,10 +17,14 @@ type Stream struct {
 	redactor   *Redactor
 	windowSize int
 	buffer     []byte
+	cache      *cache.Cache
+	nextID     int
+	cacheOn    bool
+	includeID  bool
 }
 
 // NewStream returns a streaming redactor writer.
-func NewStream(out io.Writer, cfg config.Config, detector Detector) *Stream {
+func NewStream(out io.Writer, cfg config.Config, detector Detector, secretCache *cache.Cache) *Stream {
 	if detector == nil {
 		detector = NoopDetector{}
 	}
@@ -26,12 +32,19 @@ func NewStream(out io.Writer, cfg config.Config, detector Detector) *Stream {
 	if windowSize <= 0 {
 		windowSize = 32768
 	}
+	cacheOn := cfg.Overrides.CopyWithoutRender.Enabled
+	if cfg.Mode == types.ModeStrict && cfg.Strict.DisableCopyOriginal {
+		cacheOn = false
+	}
 	return &Stream{
 		out:        out,
 		tokenizer:  &ansi.Tokenizer{},
 		detector:   detector,
 		redactor:   NewRedactor(cfg),
 		windowSize: windowSize,
+		cache:      secretCache,
+		cacheOn:    cacheOn,
+		includeID:  cfg.Redaction.IncludeEventID,
 	}
 }
 
@@ -69,6 +82,8 @@ func (s *Stream) Flush() error {
 		return nil
 	}
 	matches := s.detector.Find(s.buffer)
+	matches = s.assignIDs(matches)
+	s.storeMatches(s.buffer, matches)
 	redacted, err := s.redactor.Apply(s.buffer, matches)
 	if err != nil {
 		return err
@@ -97,6 +112,8 @@ func (s *Stream) processText(text []byte) error {
 	emitBuf := s.buffer[:emitLen]
 	keepBuf := s.buffer[emitLen:]
 	emitMatches := filterMatches(matches, emitLen)
+	emitMatches = s.assignIDs(emitMatches)
+	s.storeMatches(emitBuf, emitMatches)
 	redacted, err := s.redactor.Apply(emitBuf, emitMatches)
 	if err != nil {
 		return err
@@ -141,4 +158,38 @@ func filterMatches(matches []Match, emitLen int) []Match {
 		}
 	}
 	return out
+}
+
+func (s *Stream) assignIDs(matches []Match) []Match {
+	if len(matches) == 0 {
+		return matches
+	}
+	if !s.includeID && s.cache == nil {
+		return matches
+	}
+	out := append([]Match(nil), matches...)
+	for i := range out {
+		if out[i].ID == 0 {
+			s.nextID++
+			out[i].ID = s.nextID
+		}
+	}
+	return out
+}
+
+func (s *Stream) storeMatches(text []byte, matches []Match) {
+	if s.cache == nil || !s.cacheOn || len(matches) == 0 {
+		return
+	}
+	for _, m := range matches {
+		if m.Start < 0 || m.End > len(text) || m.End <= m.Start {
+			continue
+		}
+		s.cache.Put(cache.SecretRecord{
+			ID:       m.ID,
+			Type:     m.SecretType,
+			RuleName: m.RuleName,
+			Original: append([]byte(nil), text[m.Start:m.End]...),
+		})
+	}
 }

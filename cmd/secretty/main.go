@@ -8,11 +8,14 @@ import (
 	"os/exec"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/charmbracelet/huh"
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
 
+	"github.com/suryansh-23/secretty/internal/cache"
+	"github.com/suryansh-23/secretty/internal/clipboard"
 	"github.com/suryansh-23/secretty/internal/config"
 	"github.com/suryansh-23/secretty/internal/detect"
 	"github.com/suryansh-23/secretty/internal/ptywrap"
@@ -23,6 +26,7 @@ import (
 type appState struct {
 	cfg      config.Config
 	cfgFound bool
+	cache    *cache.Cache
 }
 
 type exitCodeError struct {
@@ -65,6 +69,7 @@ func newRootCmd(state *appState) *cobra.Command {
 			applyOverrides(&cfg, strictFlag, debugFlag)
 			state.cfg = cfg
 			state.cfgFound = found
+			state.cache = ensureCache(state.cache, cfg)
 			if !found && !noInitHints && cmd.Name() != "init" {
 				fmt.Fprintln(os.Stderr, "secretty: no config found; run `secretty init`")
 			}
@@ -72,7 +77,7 @@ func newRootCmd(state *appState) *cobra.Command {
 		},
 		RunE: func(cmd *cobra.Command, args []string) error {
 			command := defaultShellCommand()
-			return runWithPTY(cmd.Context(), state.cfg, command)
+			return runWithPTY(cmd.Context(), state.cfg, command, state.cache)
 		},
 	}
 
@@ -84,7 +89,7 @@ func newRootCmd(state *appState) *cobra.Command {
 	rootCmd.AddCommand(newShellCmd(state))
 	rootCmd.AddCommand(newRunCmd(state))
 	rootCmd.AddCommand(newInitCmd(&cfgPath))
-	rootCmd.AddCommand(newCopyCmd())
+	rootCmd.AddCommand(newCopyCmd(state))
 	rootCmd.AddCommand(newDoctorCmd())
 
 	return rootCmd
@@ -115,7 +120,7 @@ func newShellCmd(state *appState) *cobra.Command {
 				}
 				command = exec.Command(shellArgs[0], shellArgs[1:]...)
 			}
-			return runWithPTY(cmd.Context(), state.cfg, command)
+			return runWithPTY(cmd.Context(), state.cfg, command, state.cache)
 		},
 	}
 }
@@ -133,7 +138,7 @@ func newRunCmd(state *appState) *cobra.Command {
 				return errors.New("run requires a command after --")
 			}
 			command := exec.Command(runArgs[0], runArgs[1:]...)
-			return runWithPTY(cmd.Context(), state.cfg, command)
+			return runWithPTY(cmd.Context(), state.cfg, command, state.cache)
 		},
 	}
 }
@@ -251,7 +256,7 @@ func newInitCmd(cfgPath *string) *cobra.Command {
 	}
 }
 
-func newCopyCmd() *cobra.Command {
+func newCopyCmd(state *appState) *cobra.Command {
 	copyCmd := &cobra.Command{
 		Use:   "copy",
 		Short: "Copy redacted secrets without rendering",
@@ -263,7 +268,38 @@ func newCopyCmd() *cobra.Command {
 		Use:   "last",
 		Short: "Copy the last redacted secret",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return errors.New("copy last not implemented yet")
+			if !state.cfg.Overrides.CopyWithoutRender.Enabled {
+				return errors.New("copy-without-render is disabled")
+			}
+			if state.cfg.Mode == types.ModeStrict && state.cfg.Strict.DisableCopyOriginal {
+				return errors.New("copy original is disabled in strict mode")
+			}
+			if state.cache == nil {
+				return errors.New("no secret cache available")
+			}
+			if state.cfg.Overrides.CopyWithoutRender.RequireConfirm {
+				confirm := false
+				form := huh.NewForm(huh.NewGroup(huh.NewConfirm().Title("Copy last secret to clipboard?").Value(&confirm)))
+				if err := form.Run(); err != nil {
+					return err
+				}
+				if !confirm {
+					return errors.New("copy cancelled")
+				}
+			}
+			record, ok := state.cache.GetLast()
+			if !ok {
+				return errors.New("no secrets cached")
+			}
+			if err := clipboard.CopyBytes(record.Original); err != nil {
+				return err
+			}
+			if state.cfg.Redaction.IncludeEventID {
+				fmt.Printf("Copied secret %d to clipboard\n", record.ID)
+			} else {
+				fmt.Println("Copied secret to clipboard")
+			}
+			return nil
 		},
 	})
 	return copyCmd
@@ -287,10 +323,10 @@ func defaultShellCommand() *exec.Cmd {
 	return exec.Command(shell, "-l")
 }
 
-func runWithPTY(ctx context.Context, cfg config.Config, command *exec.Cmd) error {
+func runWithPTY(ctx context.Context, cfg config.Config, command *exec.Cmd, cache *cache.Cache) error {
 	command.Env = os.Environ()
 	detector := detect.NewEngine(cfg)
-	stream := redact.NewStream(os.Stdout, cfg, detector)
+	stream := redact.NewStream(os.Stdout, cfg, detector, cache)
 	exitCode, err := ptywrap.RunCommand(ctx, command, ptywrap.Options{RawMode: true, Output: stream})
 	if err != nil {
 		return err
@@ -299,6 +335,18 @@ func runWithPTY(ctx context.Context, cfg config.Config, command *exec.Cmd) error
 		return &exitCodeError{code: exitCode}
 	}
 	return nil
+}
+
+func ensureCache(existing *cache.Cache, cfg config.Config) *cache.Cache {
+	if !cfg.Overrides.CopyWithoutRender.Enabled {
+		return existing
+	}
+	ttl := time.Duration(cfg.Overrides.CopyWithoutRender.TTLSeconds) * time.Second
+	if existing == nil {
+		return cache.New(64, ttl)
+	}
+	existing.SetTTL(ttl)
+	return existing
 }
 
 func resolveConfigPath(override string) (string, error) {

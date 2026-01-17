@@ -22,7 +22,7 @@ func TestStreamAvoidsSplitMatch(t *testing.T) {
 	var out bytes.Buffer
 	detector := matchDetector{matches: []Match{{Start: 1, End: 3, Action: types.ActionMask}}}
 
-	stream := NewStream(&out, cfg, detector)
+	stream := NewStream(&out, cfg, detector, nil)
 	_, err := stream.Write([]byte("abcdef"))
 	if err != nil {
 		t.Fatalf("write: %v", err)
