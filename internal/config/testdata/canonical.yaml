@@ -1,0 +1,59 @@
+version: 1
+
+mode: demo
+strict:
+  no_reveal: true
+  lock_until_exit: false
+  disable_copy_original: false
+
+redaction:
+  default_action: mask
+  placeholder_template: "\u27e6REDACTED:{type}\u27e7"
+  include_event_id: false
+  rolling_window_bytes: 32768
+  status_line:
+    enabled: true
+    rate_limit_ms: 2000
+
+masking:
+  block_char: "\u2588"
+  hex_random_same_length:
+    uppercase: false
+  stable_hash_token:
+    enabled: false
+    tag_len: 8
+
+overrides:
+  copy_without_render:
+    enabled: true
+    ttl_seconds: 30
+    require_confirm: true
+    backend: pbcopy
+
+rulesets:
+  web3:
+    enabled: true
+    allow_bare_64hex: false
+
+rules:
+  - name: env_private_key
+    enabled: true
+    type: regex
+    action: mask
+    severity: high
+    regex:
+      pattern: "(?i)\\bPRIVATE_KEY\\s*=\\s*([^\\s]+)"
+      group: 1
+    context_keywords: ["private_key", "secret", "sk", "--private-key"]
+
+typed_detectors:
+  - name: evm_private_key
+    enabled: true
+    kind: EVM_PRIVATE_KEY
+    action: mask
+    severity: high
+    context_keywords: ["private_key", "--private-key", "secret", "sk="]
+
+debug:
+  enabled: false
+  log_events: false
