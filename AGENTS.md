@@ -14,7 +14,7 @@
 - `cmd/secretty/main.go`: Cobra-based CLI skeleton with placeholder subcommands.
 
 ## Setup
-- Go module initialized (`go.mod`) with Cobra and YAML parsing.
+- Go module initialized (`go.mod`) with Cobra, YAML parsing, and Charm Huh (init wizard).
 - Default config path remains `~/.config/secretty/config.yaml` when built.
 
 ## Run
@@ -34,6 +34,7 @@
 
 ## Data and schema
 - YAML config schema implemented in `internal/config` with defaults and validation.
+- Config write helper is implemented in `internal/config`.
 - In-memory secret cache only; no persistent storage planned.
 
 ## Redaction pipeline
@@ -58,3 +59,4 @@
 - 2026-01-17: Stage 2 PTY wrapper added (`internal/ptywrap`). `secretty`, `shell`, and `run` now execute commands under a PTY with exit code forwarding. Added PTY test and updated CLI wiring.
 - 2026-01-17: Stage 3 tokenizer + redaction stream added (`internal/ansi`, `internal/redact`). CLI now routes PTY output through the redaction stream (no-op detector). Added tokenizer/redactor tests and lint cleanups.
 - 2026-01-17: Stage 4 detection engine added (`internal/detect`) with regex rules, typed EVM detector, context scoring, and overlap resolution. CLI now wires the detector into the redaction stream.
+- 2026-01-17: Stage 5 init wizard added with Charm Huh prompts, config write support, environment summary, and self-test. Added config write/self-test helpers and tests.
