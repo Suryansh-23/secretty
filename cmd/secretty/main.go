@@ -11,6 +11,7 @@ import (
 
 	"github.com/suryansh-23/secretty/internal/config"
 	"github.com/suryansh-23/secretty/internal/ptywrap"
+	"github.com/suryansh-23/secretty/internal/redact"
 	"github.com/suryansh-23/secretty/internal/types"
 )
 
@@ -66,7 +67,7 @@ func newRootCmd(state *appState) *cobra.Command {
 		},
 		RunE: func(cmd *cobra.Command, args []string) error {
 			command := defaultShellCommand()
-			return runWithPTY(cmd.Context(), command)
+			return runWithPTY(cmd.Context(), state.cfg, command)
 		},
 	}
 
@@ -75,8 +76,8 @@ func newRootCmd(state *appState) *cobra.Command {
 	rootCmd.PersistentFlags().BoolVar(&debugFlag, "debug", false, "enable sanitized debug logging")
 	rootCmd.PersistentFlags().BoolVar(&noInitHints, "no-init-hints", false, "suppress init guidance")
 
-	rootCmd.AddCommand(newShellCmd())
-	rootCmd.AddCommand(newRunCmd())
+	rootCmd.AddCommand(newShellCmd(state))
+	rootCmd.AddCommand(newRunCmd(state))
 	rootCmd.AddCommand(newInitCmd())
 	rootCmd.AddCommand(newCopyCmd())
 	rootCmd.AddCommand(newDoctorCmd())
@@ -94,7 +95,7 @@ func applyOverrides(cfg *config.Config, strictFlag, debugFlag bool) {
 	}
 }
 
-func newShellCmd() *cobra.Command {
+func newShellCmd(state *appState) *cobra.Command {
 	return &cobra.Command{
 		Use:   "shell -- <shell>",
 		Short: "Start a protected interactive shell",
@@ -109,12 +110,12 @@ func newShellCmd() *cobra.Command {
 				}
 				command = exec.Command(shellArgs[0], shellArgs[1:]...)
 			}
-			return runWithPTY(cmd.Context(), command)
+			return runWithPTY(cmd.Context(), state.cfg, command)
 		},
 	}
 }
 
-func newRunCmd() *cobra.Command {
+func newRunCmd(state *appState) *cobra.Command {
 	return &cobra.Command{
 		Use:   "run -- <cmd...>",
 		Short: "Run a command under a protected PTY",
@@ -127,7 +128,7 @@ func newRunCmd() *cobra.Command {
 				return errors.New("run requires a command after --")
 			}
 			command := exec.Command(runArgs[0], runArgs[1:]...)
-			return runWithPTY(cmd.Context(), command)
+			return runWithPTY(cmd.Context(), state.cfg, command)
 		},
 	}
 }
@@ -178,9 +179,10 @@ func defaultShellCommand() *exec.Cmd {
 	return exec.Command(shell, "-l")
 }
 
-func runWithPTY(ctx context.Context, command *exec.Cmd) error {
+func runWithPTY(ctx context.Context, cfg config.Config, command *exec.Cmd) error {
 	command.Env = os.Environ()
-	exitCode, err := ptywrap.RunCommand(ctx, command, ptywrap.Options{RawMode: true})
+	stream := redact.NewStream(os.Stdout, cfg, nil)
+	exitCode, err := ptywrap.RunCommand(ctx, command, ptywrap.Options{RawMode: true, Output: stream})
 	if err != nil {
 		return err
 	}

@@ -22,5 +22,5 @@ func (l *Logger) Infof(format string, args ...any) {
 	if l == nil || !l.enabled {
 		return
 	}
-	fmt.Fprintf(l.out, format+"\n", args...)
+	_, _ = fmt.Fprintf(l.out, format+"\n", args...)
 }

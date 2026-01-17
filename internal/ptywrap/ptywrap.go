@@ -17,6 +17,7 @@ import (
 // Options controls PTY execution behavior.
 type Options struct {
 	RawMode bool
+	Output  io.Writer
 }
 
 // RunCommand starts cmd under a PTY and proxies IO.
@@ -24,6 +25,10 @@ func RunCommand(ctx context.Context, cmd *exec.Cmd, opts Options) (int, error) {
 	ptmx, err := pty.Start(cmd)
 	if err != nil {
 		return 1, fmt.Errorf("start pty: %w", err)
+	}
+	out := opts.Output
+	if out == nil {
+		out = os.Stdout
 	}
 
 	restore, err := maybeMakeRaw(opts.RawMode)
@@ -43,11 +48,12 @@ func RunCommand(ctx context.Context, cmd *exec.Cmd, opts Options) (int, error) {
 
 	errCh := make(chan error, 1)
 	go func() { _, _ = io.Copy(ptmx, os.Stdin) }()
-	go copyWithContext(ctx, os.Stdout, ptmx, errCh)
+	go copyWithContext(ctx, out, ptmx, errCh)
 
 	waitErr := cmd.Wait()
 	cancel()
 	_ = ptmx.Close()
+	_ = closeOutput(out)
 	<-errCh
 
 	if waitErr == nil {
@@ -62,6 +68,13 @@ func copyWithContext(ctx context.Context, dst io.Writer, src io.Reader, errCh ch
 	case errCh <- err:
 	case <-ctx.Done():
 	}
+}
+
+func closeOutput(out io.Writer) error {
+	if closer, ok := out.(interface{ Close() error }); ok {
+		return closer.Close()
+	}
+	return nil
 }
 
 func maybeMakeRaw(enable bool) (func(), error) {

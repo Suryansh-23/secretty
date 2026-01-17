@@ -36,6 +36,10 @@
 - YAML config schema implemented in `internal/config` with defaults and validation.
 - In-memory secret cache only; no persistent storage planned.
 
+## Redaction pipeline
+- Streaming ANSI tokenizer and redaction pipeline are present under `internal/ansi` and `internal/redact`.
+- Detection is currently a no-op; redaction stream passes through output unchanged until detectors are implemented.
+
 ## Integrations
 - Planned macOS clipboard integration via `pbcopy`.
 - No external services or network calls; spec requires local-only behavior.
@@ -52,3 +56,4 @@
 ## Scratchpad
 - 2026-01-17: Stage 1 scaffold complete. Added Go module, Cobra CLI skeleton, config schema + defaults + validation, and Makefile. Config tests added under `internal/config`. Go toolchain not available on this machine to run checks.
 - 2026-01-17: Stage 2 PTY wrapper added (`internal/ptywrap`). `secretty`, `shell`, and `run` now execute commands under a PTY with exit code forwarding. Added PTY test and updated CLI wiring.
+- 2026-01-17: Stage 3 tokenizer + redaction stream added (`internal/ansi`, `internal/redact`). CLI now routes PTY output through the redaction stream (no-op detector). Added tokenizer/redactor tests and lint cleanups.
