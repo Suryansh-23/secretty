@@ -38,7 +38,7 @@
 
 ## Redaction pipeline
 - Streaming ANSI tokenizer and redaction pipeline are present under `internal/ansi` and `internal/redact`.
-- Detection is currently a no-op; redaction stream passes through output unchanged until detectors are implemented.
+- Detection engine is implemented under `internal/detect` with regex rules and an EVM private key typed detector.
 
 ## Integrations
 - Planned macOS clipboard integration via `pbcopy`.
@@ -57,3 +57,4 @@
 - 2026-01-17: Stage 1 scaffold complete. Added Go module, Cobra CLI skeleton, config schema + defaults + validation, and Makefile. Config tests added under `internal/config`. Go toolchain not available on this machine to run checks.
 - 2026-01-17: Stage 2 PTY wrapper added (`internal/ptywrap`). `secretty`, `shell`, and `run` now execute commands under a PTY with exit code forwarding. Added PTY test and updated CLI wiring.
 - 2026-01-17: Stage 3 tokenizer + redaction stream added (`internal/ansi`, `internal/redact`). CLI now routes PTY output through the redaction stream (no-op detector). Added tokenizer/redactor tests and lint cleanups.
+- 2026-01-17: Stage 4 detection engine added (`internal/detect`) with regex rules, typed EVM detector, context scoring, and overlap resolution. CLI now wires the detector into the redaction stream.

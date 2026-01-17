@@ -10,6 +10,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/suryansh-23/secretty/internal/config"
+	"github.com/suryansh-23/secretty/internal/detect"
 	"github.com/suryansh-23/secretty/internal/ptywrap"
 	"github.com/suryansh-23/secretty/internal/redact"
 	"github.com/suryansh-23/secretty/internal/types"
@@ -181,7 +182,8 @@ func defaultShellCommand() *exec.Cmd {
 
 func runWithPTY(ctx context.Context, cfg config.Config, command *exec.Cmd) error {
 	command.Env = os.Environ()
-	stream := redact.NewStream(os.Stdout, cfg, nil)
+	detector := detect.NewEngine(cfg)
+	stream := redact.NewStream(os.Stdout, cfg, detector)
 	exitCode, err := ptywrap.RunCommand(ctx, command, ptywrap.Options{RawMode: true, Output: stream})
 	if err != nil {
 		return err
