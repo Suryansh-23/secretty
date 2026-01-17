@@ -1,12 +1,16 @@
 package redact
 
 import (
+	"bytes"
 	"io"
+	"time"
 
 	"github.com/suryansh-23/secretty/internal/ansi"
 	"github.com/suryansh-23/secretty/internal/cache"
 	"github.com/suryansh-23/secretty/internal/config"
+	"github.com/suryansh-23/secretty/internal/debug"
 	"github.com/suryansh-23/secretty/internal/types"
+	"github.com/suryansh-23/secretty/internal/ui"
 )
 
 // Stream applies redaction to a byte stream and writes to an output.
@@ -21,10 +25,17 @@ type Stream struct {
 	nextID     int
 	cacheOn    bool
 	includeID  bool
+	strictMode bool
+	logger     *debug.Logger
+
+	statusEnabled   bool
+	statusRateLimit time.Duration
+	lastStatus      time.Time
+	altScreen       bool
 }
 
 // NewStream returns a streaming redactor writer.
-func NewStream(out io.Writer, cfg config.Config, detector Detector, secretCache *cache.Cache) *Stream {
+func NewStream(out io.Writer, cfg config.Config, detector Detector, secretCache *cache.Cache, logger *debug.Logger) *Stream {
 	if detector == nil {
 		detector = NoopDetector{}
 	}
@@ -36,15 +47,21 @@ func NewStream(out io.Writer, cfg config.Config, detector Detector, secretCache 
 	if cfg.Mode == types.ModeStrict && cfg.Strict.DisableCopyOriginal {
 		cacheOn = false
 	}
+	statusEnabled := cfg.Redaction.StatusLine.Enabled
+	statusRateLimit := time.Duration(cfg.Redaction.StatusLine.RateLimitMS) * time.Millisecond
 	return &Stream{
-		out:        out,
-		tokenizer:  &ansi.Tokenizer{},
-		detector:   detector,
-		redactor:   NewRedactor(cfg),
-		windowSize: windowSize,
-		cache:      secretCache,
-		cacheOn:    cacheOn,
-		includeID:  cfg.Redaction.IncludeEventID,
+		out:             out,
+		tokenizer:       &ansi.Tokenizer{},
+		detector:        detector,
+		redactor:        NewRedactor(cfg),
+		windowSize:      windowSize,
+		cache:           secretCache,
+		cacheOn:         cacheOn,
+		includeID:       cfg.Redaction.IncludeEventID,
+		strictMode:      cfg.Mode == types.ModeStrict,
+		logger:          logger,
+		statusEnabled:   statusEnabled,
+		statusRateLimit: statusRateLimit,
 	}
 }
 
@@ -53,6 +70,7 @@ func (s *Stream) Write(p []byte) (int, error) {
 	segments := s.tokenizer.Push(p)
 	for _, seg := range segments {
 		if seg.Kind == ansi.SegmentEscape {
+			s.updateAltScreen(seg.Bytes)
 			if _, err := s.out.Write(seg.Bytes); err != nil {
 				return 0, err
 			}
@@ -91,6 +109,8 @@ func (s *Stream) Flush() error {
 	if _, err := s.out.Write(redacted); err != nil {
 		return err
 	}
+	s.logMatches(matches)
+	s.maybeEmitStatus(matches, redacted)
 	s.buffer = nil
 	return nil
 }
@@ -121,6 +141,8 @@ func (s *Stream) processText(text []byte) error {
 	if _, err := s.out.Write(redacted); err != nil {
 		return err
 	}
+	s.logMatches(emitMatches)
+	s.maybeEmitStatus(emitMatches, redacted)
 	s.buffer = append([]byte(nil), keepBuf...)
 	return nil
 }
@@ -160,6 +182,16 @@ func filterMatches(matches []Match, emitLen int) []Match {
 	return out
 }
 
+func (s *Stream) updateAltScreen(esc []byte) {
+	if bytes.Contains(esc, []byte("[?1049h")) || bytes.Contains(esc, []byte("[?47h")) || bytes.Contains(esc, []byte("[?1047h")) {
+		s.altScreen = true
+		return
+	}
+	if bytes.Contains(esc, []byte("[?1049l")) || bytes.Contains(esc, []byte("[?47l")) || bytes.Contains(esc, []byte("[?1047l")) {
+		s.altScreen = false
+	}
+}
+
 func (s *Stream) assignIDs(matches []Match) []Match {
 	if len(matches) == 0 {
 		return matches
@@ -192,4 +224,34 @@ func (s *Stream) storeMatches(text []byte, matches []Match) {
 			Original: append([]byte(nil), text[m.Start:m.End]...),
 		})
 	}
+}
+
+func (s *Stream) logMatches(matches []Match) {
+	if s.logger == nil || len(matches) == 0 {
+		return
+	}
+	for _, m := range matches {
+		s.logger.Infof("redact event id=%d type=%s rule=%s action=%s", m.ID, m.SecretType, m.RuleName, m.Action)
+	}
+}
+
+func (s *Stream) maybeEmitStatus(matches []Match, redacted []byte) {
+	if !s.statusEnabled || len(matches) == 0 || s.altScreen {
+		return
+	}
+	if s.statusRateLimit > 0 && time.Since(s.lastStatus) < s.statusRateLimit {
+		return
+	}
+	if len(redacted) == 0 || redacted[len(redacted)-1] != '\n' {
+		return
+	}
+	first := matches[0]
+	line := ui.StatusLine(len(matches), s.strictMode, s.includeID, first.SecretType, first.ID)
+	if line == "" {
+		return
+	}
+	if _, err := s.out.Write([]byte(line + "\n")); err != nil {
+		return
+	}
+	s.lastStatus = time.Now()
 }

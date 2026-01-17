@@ -17,6 +17,7 @@ import (
 	"github.com/suryansh-23/secretty/internal/cache"
 	"github.com/suryansh-23/secretty/internal/clipboard"
 	"github.com/suryansh-23/secretty/internal/config"
+	"github.com/suryansh-23/secretty/internal/debug"
 	"github.com/suryansh-23/secretty/internal/detect"
 	"github.com/suryansh-23/secretty/internal/ptywrap"
 	"github.com/suryansh-23/secretty/internal/redact"
@@ -27,6 +28,8 @@ type appState struct {
 	cfg      config.Config
 	cfgFound bool
 	cache    *cache.Cache
+	logger   *debug.Logger
+	cfgPath  string
 }
 
 type exitCodeError struct {
@@ -62,7 +65,11 @@ func newRootCmd(state *appState) *cobra.Command {
 		Short:        "Protect terminal output by redacting secrets",
 		SilenceUsage: true,
 		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
-			cfg, found, err := config.Load(cfgPath)
+			resolvedPath, err := resolveConfigPath(cfgPath)
+			if err != nil {
+				return err
+			}
+			cfg, found, err := config.Load(resolvedPath)
 			if err != nil {
 				return err
 			}
@@ -70,6 +77,8 @@ func newRootCmd(state *appState) *cobra.Command {
 			state.cfg = cfg
 			state.cfgFound = found
 			state.cache = ensureCache(state.cache, cfg)
+			state.logger = debug.New(cfg.Debug.Enabled)
+			state.cfgPath = resolvedPath
 			if !found && !noInitHints && cmd.Name() != "init" {
 				fmt.Fprintln(os.Stderr, "secretty: no config found; run `secretty init`")
 			}
@@ -77,7 +86,7 @@ func newRootCmd(state *appState) *cobra.Command {
 		},
 		RunE: func(cmd *cobra.Command, args []string) error {
 			command := defaultShellCommand()
-			return runWithPTY(cmd.Context(), state.cfg, command, state.cache)
+			return runWithPTY(cmd.Context(), state.cfg, command, state.cache, state.logger)
 		},
 	}
 
@@ -90,7 +99,7 @@ func newRootCmd(state *appState) *cobra.Command {
 	rootCmd.AddCommand(newRunCmd(state))
 	rootCmd.AddCommand(newInitCmd(&cfgPath))
 	rootCmd.AddCommand(newCopyCmd(state))
-	rootCmd.AddCommand(newDoctorCmd())
+	rootCmd.AddCommand(newDoctorCmd(state))
 
 	return rootCmd
 }
@@ -120,7 +129,7 @@ func newShellCmd(state *appState) *cobra.Command {
 				}
 				command = exec.Command(shellArgs[0], shellArgs[1:]...)
 			}
-			return runWithPTY(cmd.Context(), state.cfg, command, state.cache)
+			return runWithPTY(cmd.Context(), state.cfg, command, state.cache, state.logger)
 		},
 	}
 }
@@ -138,7 +147,7 @@ func newRunCmd(state *appState) *cobra.Command {
 				return errors.New("run requires a command after --")
 			}
 			command := exec.Command(runArgs[0], runArgs[1:]...)
-			return runWithPTY(cmd.Context(), state.cfg, command, state.cache)
+			return runWithPTY(cmd.Context(), state.cfg, command, state.cache, state.logger)
 		},
 	}
 }
@@ -305,12 +314,12 @@ func newCopyCmd(state *appState) *cobra.Command {
 	return copyCmd
 }
 
-func newDoctorCmd() *cobra.Command {
+func newDoctorCmd(state *appState) *cobra.Command {
 	return &cobra.Command{
 		Use:   "doctor",
 		Short: "Print environment diagnostics",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return errors.New("doctor command not implemented yet")
+			return runDoctor(state)
 		},
 	}
 }
@@ -323,10 +332,10 @@ func defaultShellCommand() *exec.Cmd {
 	return exec.Command(shell, "-l")
 }
 
-func runWithPTY(ctx context.Context, cfg config.Config, command *exec.Cmd, cache *cache.Cache) error {
+func runWithPTY(ctx context.Context, cfg config.Config, command *exec.Cmd, cache *cache.Cache, logger *debug.Logger) error {
 	command.Env = os.Environ()
 	detector := detect.NewEngine(cfg)
-	stream := redact.NewStream(os.Stdout, cfg, detector, cache)
+	stream := redact.NewStream(os.Stdout, cfg, detector, cache, logger)
 	exitCode, err := ptywrap.RunCommand(ctx, command, ptywrap.Options{RawMode: true, Output: stream})
 	if err != nil {
 		return err
@@ -339,7 +348,10 @@ func runWithPTY(ctx context.Context, cfg config.Config, command *exec.Cmd, cache
 
 func ensureCache(existing *cache.Cache, cfg config.Config) *cache.Cache {
 	if !cfg.Overrides.CopyWithoutRender.Enabled {
-		return existing
+		return nil
+	}
+	if cfg.Mode == types.ModeStrict && cfg.Strict.DisableCopyOriginal {
+		return nil
 	}
 	ttl := time.Duration(cfg.Overrides.CopyWithoutRender.TTLSeconds) * time.Second
 	if existing == nil {
@@ -347,6 +359,61 @@ func ensureCache(existing *cache.Cache, cfg config.Config) *cache.Cache {
 	}
 	existing.SetTTL(ttl)
 	return existing
+}
+
+func runDoctor(state *appState) error {
+	shell := os.Getenv("SHELL")
+	termName := os.Getenv("TERM")
+	inTmux := os.Getenv("TMUX") != ""
+	cols, rows, err := term.GetSize(int(os.Stdin.Fd()))
+	if err != nil {
+		cols = 0
+		rows = 0
+	}
+	fmt.Printf("shell=%s\n", shell)
+	fmt.Printf("term=%s\n", termName)
+	fmt.Printf("tmux=%t\n", inTmux)
+	fmt.Printf("size=%dx%d\n", cols, rows)
+	fmt.Printf("config_path=%s\n", state.cfgPath)
+	fmt.Printf("config_found=%t\n", state.cfgFound)
+	fmt.Printf("mode=%s\n", state.cfg.Mode)
+	fmt.Printf("strict_no_reveal=%t\n", state.cfg.Strict.NoReveal)
+	fmt.Printf("strict_disable_copy_original=%t\n", state.cfg.Strict.DisableCopyOriginal)
+	fmt.Printf("copy_enabled=%t\n", state.cfg.Overrides.CopyWithoutRender.Enabled)
+	fmt.Printf("copy_ttl_seconds=%d\n", state.cfg.Overrides.CopyWithoutRender.TTLSeconds)
+	fmt.Printf("copy_require_confirm=%t\n", state.cfg.Overrides.CopyWithoutRender.RequireConfirm)
+	fmt.Printf("status_line_enabled=%t\n", state.cfg.Redaction.StatusLine.Enabled)
+	fmt.Printf("status_line_rate_limit_ms=%d\n", state.cfg.Redaction.StatusLine.RateLimitMS)
+	fmt.Printf("rules_enabled=%s\n", strings.Join(enabledRuleNames(state.cfg), ","))
+	fmt.Printf("typed_detectors_enabled=%s\n", strings.Join(enabledDetectorNames(state.cfg), ","))
+	fmt.Println("cache_scope=in-process")
+	return nil
+}
+
+func enabledRuleNames(cfg config.Config) []string {
+	var out []string
+	for _, rule := range cfg.Rules {
+		if rule.Enabled {
+			out = append(out, rule.Name)
+		}
+	}
+	if len(out) == 0 {
+		return []string{"none"}
+	}
+	return out
+}
+
+func enabledDetectorNames(cfg config.Config) []string {
+	var out []string
+	for _, det := range cfg.TypedDetectors {
+		if det.Enabled {
+			out = append(out, det.Name)
+		}
+	}
+	if len(out) == 0 {
+		return []string{"none"}
+	}
+	return out
 }
 
 func resolveConfigPath(override string) (string, error) {

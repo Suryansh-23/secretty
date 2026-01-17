@@ -40,6 +40,7 @@
 ## Redaction pipeline
 - Streaming ANSI tokenizer and redaction pipeline are present under `internal/ansi` and `internal/redact`.
 - Detection engine is implemented under `internal/detect` with regex rules and an EVM private key typed detector.
+- Status line formatting lives in `internal/ui` and is emitted only when not in alt-screen and rate-limited.
 
 ## Integrations
 - macOS clipboard integration via `pbcopy` implemented in `internal/clipboard`.
@@ -61,3 +62,4 @@
 - 2026-01-17: Stage 4 detection engine added (`internal/detect`) with regex rules, typed EVM detector, context scoring, and overlap resolution. CLI now wires the detector into the redaction stream.
 - 2026-01-17: Stage 5 init wizard added with Charm Huh prompts, config write support, environment summary, and self-test. Added config write/self-test helpers and tests.
 - 2026-01-17: Stage 6 secret cache + copy-without-render implemented. Added LRU+TTL cache, pbcopy integration, and `secretty copy last` wiring. Redaction stream now stores originals in-memory when enabled.
+- 2026-01-17: Stage 7 status line + debug logging + doctor implemented. Added alt-screen-aware status line, sanitized redaction logging, and a doctor command that reports env/config status.
