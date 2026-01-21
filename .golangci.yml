@@ -1,0 +1,17 @@
+version: 2
+
+run:
+  timeout: 2m
+  tests: true
+
+linters:
+  enable:
+    - errcheck
+    - govet
+    - staticcheck
+    - unused
+
+linters-settings:
+  errcheck:
+    check-type-assertions: true
+    check-blank: true

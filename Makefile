@@ -1,7 +1,7 @@
 BINARY := secretty
 CMD := ./cmd/secretty
 
-.PHONY: build test lint fmt
+.PHONY: build test lint fmt smoke
 
 build:
 	go build -o bin/$(BINARY) $(CMD)
@@ -14,3 +14,6 @@ lint:
 
 fmt:
 	gofmt -w cmd internal
+
+smoke: build
+	./scripts/smoke.sh ./bin/$(BINARY)

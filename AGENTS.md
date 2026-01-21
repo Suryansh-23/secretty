@@ -6,9 +6,11 @@
 
 ## Key files
 - `secretty-mvp-spec.md`: Full MVP product/technical specification (CLI contract, redaction pipeline, config schema, architecture).
-- `README.md`: Placeholder.
+- `README.md`: Usage, configuration, and development guide.
 - `LICENSE`: MIT.
 - `.gitignore`: Go-oriented ignores.
+- `.golangci.yml`: Lint configuration.
+- `.github/workflows/ci.yml`: macOS CI for tests/vet.
 
 ## Entry points
 - `cmd/secretty/main.go`: Cobra-based CLI skeleton with placeholder subcommands.
@@ -27,10 +29,11 @@
 ## Lint / Format / Test
 - `Makefile` provides `build`, `test`, `lint`, `fmt` targets.
 - Config unit tests live under `internal/config`.
+- `scripts/smoke.sh` provides a minimal smoke run.
 
 ## Build / Deploy
 - Local build is `make build` (outputs `bin/secretty`).
-- Homebrew packaging remains a later stage.
+- Homebrew formula template is in `packaging/homebrew/secretty.rb`.
 
 ## Data and schema
 - YAML config schema implemented in `internal/config` with defaults and validation.
@@ -63,3 +66,4 @@
 - 2026-01-17: Stage 5 init wizard added with Charm Huh prompts, config write support, environment summary, and self-test. Added config write/self-test helpers and tests.
 - 2026-01-17: Stage 6 secret cache + copy-without-render implemented. Added LRU+TTL cache, pbcopy integration, and `secretty copy last` wiring. Redaction stream now stores originals in-memory when enabled.
 - 2026-01-17: Stage 7 status line + debug logging + doctor implemented. Added alt-screen-aware status line, sanitized redaction logging, and a doctor command that reports env/config status.
+- 2026-01-17: Stage 8 finishing touches: README, smoke script, CI workflow, Homebrew formula template, and lint config. Full test/lint/build + smoke run executed.
