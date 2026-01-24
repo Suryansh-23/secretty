@@ -78,3 +78,4 @@
 - 2026-01-17: Interactive shells set rolling window to 0 for immediate output; fixes prompt/key echo and avoids breaking shell themes.
 - 2026-01-24: Added IPC socket cache for `copy last` across wrapped shells, plus interactive login shell defaults (`-l -i`) to preserve user prompt/theme. Doctor now reports IPC cache scope.
 - 2026-01-24: Expanded rulesets + redaction styles (block/glow/morse), added multi-select onboarding for rulesets, updated config schema/tests/canonical YAML, and refreshed README. Lint/test/build/smoke run succeeded.
+- 2026-01-24: Added `secretty reset` command to remove config and SecreTTY-marked shell blocks, plus shellconfig helper/tests and README updates. Lint/test/build/smoke run succeeded.

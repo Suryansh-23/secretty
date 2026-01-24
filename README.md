@@ -38,6 +38,7 @@ Binary output: `bin/secretty`
 ./bin/secretty shell -- zsh
 ./bin/secretty run -- printf "PRIVATE_KEY=0x<64hex>\n"
 ./bin/secretty init
+./bin/secretty reset
 ./bin/secretty copy last
 ./bin/secretty doctor
 ```
@@ -172,6 +173,12 @@ make test
 make build
 make smoke
 ```
+
+## Reset / uninstall
+```
+./bin/secretty reset
+```
+This removes the config file and deletes any SecreTTY marker blocks from common shell rc files. Manual aliases or custom edits must be removed manually.
 
 ## Limitations
 - macOS-only MVP.

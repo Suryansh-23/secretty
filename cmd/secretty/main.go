@@ -23,6 +23,7 @@ import (
 	"github.com/suryansh-23/secretty/internal/ipc"
 	"github.com/suryansh-23/secretty/internal/ptywrap"
 	"github.com/suryansh-23/secretty/internal/redact"
+	"github.com/suryansh-23/secretty/internal/shellconfig"
 	"github.com/suryansh-23/secretty/internal/types"
 	"github.com/suryansh-23/secretty/internal/ui"
 )
@@ -101,6 +102,7 @@ func newRootCmd(state *appState) *cobra.Command {
 	rootCmd.AddCommand(newShellCmd(state))
 	rootCmd.AddCommand(newRunCmd(state))
 	rootCmd.AddCommand(newInitCmd(&cfgPath))
+	rootCmd.AddCommand(newResetCmd(&cfgPath))
 	rootCmd.AddCommand(newCopyCmd(state))
 	rootCmd.AddCommand(newDoctorCmd(state))
 
@@ -263,6 +265,63 @@ func newInitCmd(cfgPath *string) *cobra.Command {
 	}
 }
 
+func newResetCmd(cfgPath *string) *cobra.Command {
+	var yes bool
+	cmd := &cobra.Command{
+		Use:   "reset",
+		Short: "Remove SecreTTY config and shell integration",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			path, err := resolveConfigPath(*cfgPath)
+			if err != nil {
+				return err
+			}
+			if !yes {
+				if !term.IsTerminal(int(os.Stdin.Fd())) {
+					return errors.New("reset requires --yes when not running interactively")
+				}
+				confirm := false
+				form := huh.NewForm(huh.NewGroup(huh.NewConfirm().Title("Remove SecreTTY config and shell integration?").Value(&confirm)))
+				if err := form.Run(); err != nil {
+					return err
+				}
+				if !confirm {
+					return errors.New("reset cancelled")
+				}
+			}
+
+			removedConfig, err := removeConfigFile(path)
+			if err != nil {
+				return err
+			}
+			removedBlocks := 0
+			for _, shellPath := range defaultShellConfigPaths() {
+				changed, err := shellconfig.RemoveBlock(shellPath)
+				if err != nil {
+					return err
+				}
+				if changed {
+					removedBlocks++
+				}
+			}
+
+			if removedConfig {
+				fmt.Printf("Removed config: %s\n", path)
+			} else {
+				fmt.Printf("Config not found: %s\n", path)
+			}
+			if removedBlocks > 0 {
+				fmt.Printf("Removed SecreTTY shell blocks from %d file(s)\n", removedBlocks)
+			} else {
+				fmt.Println("No SecreTTY shell blocks found.")
+			}
+			fmt.Println("Note: manual aliases or custom shell changes must be removed manually.")
+			return nil
+		},
+	}
+	cmd.Flags().BoolVar(&yes, "yes", false, "skip confirmation prompts")
+	return cmd
+}
+
 func newCopyCmd(state *appState) *cobra.Command {
 	copyCmd := &cobra.Command{
 		Use:   "copy",
@@ -392,6 +451,43 @@ func applyRulesetSelections(cfg *config.Config, selected []string) {
 	cfg.Rulesets.AuthTokens.Enabled = set["auth_tokens"]
 	cfg.Rulesets.Cloud.Enabled = set["cloud"]
 	cfg.Rulesets.Passwords.Enabled = set["passwords"]
+}
+
+func defaultShellConfigPaths() []string {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return nil
+	}
+	return []string{
+		filepath.Join(home, ".zshrc"),
+		filepath.Join(home, ".zprofile"),
+		filepath.Join(home, ".bashrc"),
+		filepath.Join(home, ".bash_profile"),
+		filepath.Join(home, ".profile"),
+		filepath.Join(home, ".config", "fish", "config.fish"),
+	}
+}
+
+func removeConfigFile(path string) (bool, error) {
+	if !exists(path) {
+		return false, nil
+	}
+	if err := os.Remove(path); err != nil {
+		return false, err
+	}
+	dir := filepath.Dir(path)
+	if isDirEmpty(dir) {
+		_ = os.Remove(dir)
+	}
+	return true, nil
+}
+
+func isDirEmpty(path string) bool {
+	entries, err := os.ReadDir(path)
+	if err != nil {
+		return false
+	}
+	return len(entries) == 0
 }
 
 func startIPCServer(cfg config.Config, cache *cache.Cache) (string, func(), error) {
