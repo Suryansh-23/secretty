@@ -79,3 +79,4 @@
 - 2026-01-24: Added IPC socket cache for `copy last` across wrapped shells, plus interactive login shell defaults (`-l -i`) to preserve user prompt/theme. Doctor now reports IPC cache scope.
 - 2026-01-24: Expanded rulesets + redaction styles (block/glow/morse), added multi-select onboarding for rulesets, updated config schema/tests/canonical YAML, and refreshed README. Lint/test/build/smoke run succeeded.
 - 2026-01-24: Added `secretty reset` command to remove config and SecreTTY-marked shell blocks, plus shellconfig helper/tests and README updates. Lint/test/build/smoke run succeeded.
+- 2026-01-24: Fixed UTF-8 boundary handling in streaming redaction (prevents icon glyph corruption) and added tests. Lint/test/build/smoke run succeeded.

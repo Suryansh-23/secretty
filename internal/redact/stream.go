@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"io"
 	"time"
+	"unicode/utf8"
 
 	"github.com/suryansh-23/secretty/internal/ansi"
 	"github.com/suryansh-23/secretty/internal/cache"
@@ -118,10 +119,15 @@ func (s *Stream) Flush() error {
 func (s *Stream) processText(text []byte) error {
 	if s.windowSize == 0 {
 		s.buffer = append(s.buffer, text...)
-		matches := s.detector.Find(s.buffer)
+		emitBuf, tail := splitUTF8Tail(s.buffer)
+		if len(emitBuf) == 0 {
+			s.buffer = tail
+			return nil
+		}
+		matches := s.detector.Find(emitBuf)
 		matches = s.assignIDs(matches)
-		s.storeMatches(s.buffer, matches)
-		redacted, err := s.redactor.Apply(s.buffer, matches)
+		s.storeMatches(emitBuf, matches)
+		redacted, err := s.redactor.Apply(emitBuf, matches)
 		if err != nil {
 			return err
 		}
@@ -130,7 +136,7 @@ func (s *Stream) processText(text []byte) error {
 		}
 		s.logMatches(matches)
 		s.maybeEmitStatus(matches, redacted)
-		s.buffer = nil
+		s.buffer = tail
 		return nil
 	}
 
@@ -144,6 +150,7 @@ func (s *Stream) processText(text []byte) error {
 	}
 	matches := s.detector.Find(s.buffer)
 	emitLen = safeEmitLen(emitLen, matches)
+	emitLen = utf8SafePrefixLen(s.buffer, emitLen)
 	if emitLen == 0 {
 		return nil
 	}
@@ -185,6 +192,34 @@ func safeEmitLen(emitLen int, matches []Match) int {
 		}
 	}
 	return emitLen
+}
+
+func splitUTF8Tail(buf []byte) ([]byte, []byte) {
+	if len(buf) == 0 {
+		return nil, nil
+	}
+	start := len(buf) - 1
+	for start >= 0 && !utf8.RuneStart(buf[start]) {
+		start--
+	}
+	if start < 0 {
+		return nil, buf
+	}
+	if utf8.FullRune(buf[start:]) {
+		return buf, nil
+	}
+	return buf[:start], buf[start:]
+}
+
+func utf8SafePrefixLen(buf []byte, max int) int {
+	if max <= 0 {
+		return 0
+	}
+	if max > len(buf) {
+		max = len(buf)
+	}
+	head, _ := splitUTF8Tail(buf[:max])
+	return len(head)
 }
 
 func filterMatches(matches []Match, emitLen int) []Match {
