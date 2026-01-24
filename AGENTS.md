@@ -76,3 +76,5 @@
 - 2026-01-17: Onboarding updated with animated ASCII logo header + themed Huh form. Added UI palette/theme and documented TUI design system.
 - 2026-01-17: Onboarding logo animation updated with a larger slanted logotype and left-aligned rendering.
 - 2026-01-17: Interactive shells set rolling window to 0 for immediate output; fixes prompt/key echo and avoids breaking shell themes.
+- 2026-01-24: Added IPC socket cache for `copy last` across wrapped shells, plus interactive login shell defaults (`-l -i`) to preserve user prompt/theme. Doctor now reports IPC cache scope.
+- 2026-01-24: Expanded rulesets + redaction styles (block/glow/morse), added multi-select onboarding for rulesets, updated config schema/tests/canonical YAML, and refreshed README. Lint/test/build/smoke run succeeded.
