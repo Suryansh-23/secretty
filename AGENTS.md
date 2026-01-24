@@ -45,6 +45,12 @@
 - Detection engine is implemented under `internal/detect` with regex rules and an EVM private key typed detector.
 - Status line formatting lives in `internal/ui` and is emitted only when not in alt-screen and rate-limited.
 
+## TUI design system
+- **Palette (fixed):** `#22D3EE` (primary), `#38BDF8`, `#60A5FA`, `#A78BFA` (secondary), `#F472B6` (accent), `#FB7185`, `#94A3B8` (muted).
+- **Art style:** clean ASCII logotype, monoline, wide geometry; animated color sweep across lines for subtle motion.
+- **UX vision:** calm, demo-safe; focus on legibility and low-noise prompts. Status lines are minimal, rate-limited, and suppressed in alt-screen.
+- **Onboarding:** animated logo header persists above the wizard during `secretty init`, themed to match palette.
+
 ## Integrations
 - macOS clipboard integration via `pbcopy` implemented in `internal/clipboard`.
 - No external services or network calls; spec requires local-only behavior.
@@ -67,3 +73,6 @@
 - 2026-01-17: Stage 6 secret cache + copy-without-render implemented. Added LRU+TTL cache, pbcopy integration, and `secretty copy last` wiring. Redaction stream now stores originals in-memory when enabled.
 - 2026-01-17: Stage 7 status line + debug logging + doctor implemented. Added alt-screen-aware status line, sanitized redaction logging, and a doctor command that reports env/config status.
 - 2026-01-17: Stage 8 finishing touches: README, smoke script, CI workflow, Homebrew formula template, and lint config. Full test/lint/build + smoke run executed.
+- 2026-01-17: Onboarding updated with animated ASCII logo header + themed Huh form. Added UI palette/theme and documented TUI design system.
+- 2026-01-17: Onboarding logo animation updated with a larger slanted logotype and left-aligned rendering.
+- 2026-01-17: Interactive shells set rolling window to 0 for immediate output; fixes prompt/key echo and avoids breaking shell themes.

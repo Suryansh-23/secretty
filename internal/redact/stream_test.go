@@ -31,3 +31,19 @@ func TestStreamAvoidsSplitMatch(t *testing.T) {
 		t.Fatalf("output = %q", out.String())
 	}
 }
+
+func TestStreamNoBuffer(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Redaction.RollingWindowBytes = 0
+	var out bytes.Buffer
+	detector := matchDetector{matches: []Match{{Start: 0, End: 3, Action: types.ActionMask}}}
+
+	stream := NewStream(&out, cfg, detector, nil, nil)
+	_, err := stream.Write([]byte("abc"))
+	if err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	if out.Len() == 0 {
+		t.Fatalf("expected output with no buffering")
+	}
+}

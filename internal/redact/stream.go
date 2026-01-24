@@ -40,7 +40,7 @@ func NewStream(out io.Writer, cfg config.Config, detector Detector, secretCache 
 		detector = NoopDetector{}
 	}
 	windowSize := cfg.Redaction.RollingWindowBytes
-	if windowSize <= 0 {
+	if windowSize < 0 {
 		windowSize = 32768
 	}
 	cacheOn := cfg.Overrides.CopyWithoutRender.Enabled
@@ -116,6 +116,24 @@ func (s *Stream) Flush() error {
 }
 
 func (s *Stream) processText(text []byte) error {
+	if s.windowSize == 0 {
+		s.buffer = append(s.buffer, text...)
+		matches := s.detector.Find(s.buffer)
+		matches = s.assignIDs(matches)
+		s.storeMatches(s.buffer, matches)
+		redacted, err := s.redactor.Apply(s.buffer, matches)
+		if err != nil {
+			return err
+		}
+		if _, err := s.out.Write(redacted); err != nil {
+			return err
+		}
+		s.logMatches(matches)
+		s.maybeEmitStatus(matches, redacted)
+		s.buffer = nil
+		return nil
+	}
+
 	s.buffer = append(s.buffer, text...)
 	emitLen := 0
 	if len(s.buffer) > s.windowSize {

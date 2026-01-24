@@ -14,6 +14,7 @@ SecreTTY is a macOS-only PTY wrapper that redacts secrets from terminal output b
 - Typed EVM private key detection + regex rules.
 - Optional status line with rate limiting.
 - Copy-without-render to clipboard (macOS `pbcopy`).
+- Animated onboarding wizard with theme + logo.
 
 ## Install
 Homebrew tap (planned):
@@ -39,6 +40,12 @@ Binary output: `bin/secretty`
 ./bin/secretty copy last
 ./bin/secretty doctor
 ```
+
+## Onboarding
+```
+./bin/secretty init
+```
+The wizard shows an animated logo header and guides the user through mode, ruleset, and clipboard settings before writing `~/.config/secretty/config.yaml`.
 
 ## Configuration
 Default path:
@@ -122,6 +129,7 @@ make smoke
 - macOS-only MVP.
 - `copy last` is **in-process only** (a new `secretty` invocation cannot access secrets from a prior session).
 - tmux compatibility is not guaranteed.
+- Interactive shells run with unbuffered output to preserve prompt responsiveness; this can reduce cross-chunk redaction for extremely fragmented output.
 
 ## Security invariants
 - Never print or log original secret bytes.

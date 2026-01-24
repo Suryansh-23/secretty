@@ -22,6 +22,7 @@ import (
 	"github.com/suryansh-23/secretty/internal/ptywrap"
 	"github.com/suryansh-23/secretty/internal/redact"
 	"github.com/suryansh-23/secretty/internal/types"
+	"github.com/suryansh-23/secretty/internal/ui"
 )
 
 type appState struct {
@@ -86,7 +87,7 @@ func newRootCmd(state *appState) *cobra.Command {
 		},
 		RunE: func(cmd *cobra.Command, args []string) error {
 			command := defaultShellCommand()
-			return runWithPTY(cmd.Context(), state.cfg, command, state.cache, state.logger)
+			return runWithPTY(cmd.Context(), state.cfg, command, state.cache, state.logger, true)
 		},
 	}
 
@@ -129,7 +130,7 @@ func newShellCmd(state *appState) *cobra.Command {
 				}
 				command = exec.Command(shellArgs[0], shellArgs[1:]...)
 			}
-			return runWithPTY(cmd.Context(), state.cfg, command, state.cache, state.logger)
+			return runWithPTY(cmd.Context(), state.cfg, command, state.cache, state.logger, true)
 		},
 	}
 }
@@ -147,7 +148,7 @@ func newRunCmd(state *appState) *cobra.Command {
 				return errors.New("run requires a command after --")
 			}
 			command := exec.Command(runArgs[0], runArgs[1:]...)
-			return runWithPTY(cmd.Context(), state.cfg, command, state.cache, state.logger)
+			return runWithPTY(cmd.Context(), state.cfg, command, state.cache, state.logger, false)
 		},
 	}
 }
@@ -161,27 +162,25 @@ func newInitCmd(cfgPath *string) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			if exists(path) {
-				confirm := false
-				form := huh.NewForm(huh.NewGroup(huh.NewConfirm().Title("Config exists. Overwrite?").Value(&confirm)))
-				if err := form.Run(); err != nil {
-					return err
-				}
-				if !confirm {
-					return errors.New("init cancelled")
-				}
-			}
 
-			printEnvSummary()
 			cfg := config.DefaultConfig()
-
 			mode := string(cfg.Mode)
 			enableWeb3 := cfg.Rulesets.Web3.Enabled
 			copyEnabled := cfg.Overrides.CopyWithoutRender.Enabled
 			requireConfirm := cfg.Overrides.CopyWithoutRender.RequireConfirm
-			ttl := cfg.Overrides.CopyWithoutRender.TTLSeconds
+			ttlStr := strconv.Itoa(cfg.Overrides.CopyWithoutRender.TTLSeconds)
+			overwrite := false
 
-			modeForm := huh.NewForm(
+			envNote := huh.NewNote().
+				Title("Environment").
+				Description(envSummary()).
+				Next(true)
+
+			form := huh.NewForm(
+				huh.NewGroup(envNote),
+				huh.NewGroup(
+					huh.NewConfirm().Title("Config exists. Overwrite?").Value(&overwrite),
+				).WithHideFunc(func() bool { return !exists(path) }),
 				huh.NewGroup(
 					huh.NewSelect[string]().Title("Choose mode").Value(&mode).Options(
 						huh.NewOption("Demo (default)", string(types.ModeDemo)),
@@ -189,63 +188,41 @@ func newInitCmd(cfgPath *string) *cobra.Command {
 						huh.NewOption("Warn-only", string(types.ModeWarn)),
 					),
 				),
-			)
-			if err := modeForm.Run(); err != nil {
-				return err
-			}
-
-			web3Form := huh.NewForm(
 				huh.NewGroup(
 					huh.NewConfirm().Title("Enable Web3 ruleset (EVM keys)?").Value(&enableWeb3),
 				),
-			)
-			if err := web3Form.Run(); err != nil {
-				return err
-			}
-
-			copyForm := huh.NewForm(
 				huh.NewGroup(
 					huh.NewConfirm().Title("Enable copy-without-render?").Value(&copyEnabled),
 				),
-			)
-			if err := copyForm.Run(); err != nil {
+				huh.NewGroup(
+					huh.NewConfirm().Title("Require confirmation before copying?").Value(&requireConfirm),
+				).WithHideFunc(func() bool { return !copyEnabled }),
+				huh.NewGroup(
+					huh.NewInput().Title("Copy TTL seconds").Value(&ttlStr).Validate(func(v string) error {
+						value, err := strconv.Atoi(strings.TrimSpace(v))
+						if err != nil || value < 0 {
+							return errors.New("enter a non-negative integer")
+						}
+						return nil
+					}),
+				).WithHideFunc(func() bool { return !copyEnabled }),
+			).WithTheme(ui.Theme())
+
+			if err := runAnimatedForm(form); err != nil {
 				return err
 			}
-
-			if copyEnabled {
-				reqConfirmForm := huh.NewForm(
-					huh.NewGroup(
-						huh.NewConfirm().Title("Require confirmation before copying?").Value(&requireConfirm),
-					),
-				)
-				if err := reqConfirmForm.Run(); err != nil {
-					return err
-				}
-
-				ttlStr := strconv.Itoa(ttl)
-				ttlForm := huh.NewForm(
-					huh.NewGroup(
-						huh.NewInput().Title("Copy TTL seconds").Value(&ttlStr).Validate(func(v string) error {
-							value, err := strconv.Atoi(strings.TrimSpace(v))
-							if err != nil || value < 0 {
-								return errors.New("enter a non-negative integer")
-							}
-							return nil
-						}),
-					),
-				)
-				if err := ttlForm.Run(); err != nil {
-					return err
-				}
-				parsedTTL, _ := strconv.Atoi(strings.TrimSpace(ttlStr))
-				ttl = parsedTTL
+			if exists(path) && !overwrite {
+				return errors.New("init cancelled")
 			}
 
 			cfg.Mode = types.Mode(mode)
 			cfg.Rulesets.Web3.Enabled = enableWeb3
 			cfg.Overrides.CopyWithoutRender.Enabled = copyEnabled
 			cfg.Overrides.CopyWithoutRender.RequireConfirm = requireConfirm
-			cfg.Overrides.CopyWithoutRender.TTLSeconds = ttl
+			if copyEnabled {
+				parsedTTL, _ := strconv.Atoi(strings.TrimSpace(ttlStr))
+				cfg.Overrides.CopyWithoutRender.TTLSeconds = parsedTTL
+			}
 			if cfg.Mode == types.ModeStrict {
 				cfg.Strict.NoReveal = true
 			}
@@ -332,8 +309,11 @@ func defaultShellCommand() *exec.Cmd {
 	return exec.Command(shell, "-l")
 }
 
-func runWithPTY(ctx context.Context, cfg config.Config, command *exec.Cmd, cache *cache.Cache, logger *debug.Logger) error {
+func runWithPTY(ctx context.Context, cfg config.Config, command *exec.Cmd, cache *cache.Cache, logger *debug.Logger, interactive bool) error {
 	command.Env = os.Environ()
+	if interactive {
+		cfg.Redaction.RollingWindowBytes = 0
+	}
 	detector := detect.NewEngine(cfg)
 	stream := redact.NewStream(os.Stdout, cfg, detector, cache, logger)
 	exitCode, err := ptywrap.RunCommand(ctx, command, ptywrap.Options{RawMode: true, Output: stream})
@@ -432,7 +412,7 @@ func exists(path string) bool {
 	return !info.IsDir()
 }
 
-func printEnvSummary() {
+func envSummary() string {
 	shell := os.Getenv("SHELL")
 	termName := os.Getenv("TERM")
 	inTmux := os.Getenv("TMUX") != ""
@@ -441,7 +421,7 @@ func printEnvSummary() {
 		cols = 0
 		rows = 0
 	}
-	fmt.Printf("Detected shell=%s TERM=%s tmux=%t size=%dx%d\n", shell, termName, inTmux, cols, rows)
+	return fmt.Sprintf("Detected shell=%s TERM=%s tmux=%t size=%dx%d", shell, termName, inTmux, cols, rows)
 }
 
 func runSelfTest(cfg config.Config) error {
