@@ -171,7 +171,8 @@ func newInitCmd(cfgPath *string) *cobra.Command {
 
 			cfg := config.DefaultConfig()
 			mode := string(cfg.Mode)
-			enableWeb3 := cfg.Rulesets.Web3.Enabled
+			maskStyle := string(cfg.Masking.Style)
+			selectedRulesets := defaultRulesetSelections(cfg)
 			copyEnabled := cfg.Overrides.CopyWithoutRender.Enabled
 			requireConfirm := cfg.Overrides.CopyWithoutRender.RequireConfirm
 			ttlStr := strconv.Itoa(cfg.Overrides.CopyWithoutRender.TTLSeconds)
@@ -195,7 +196,20 @@ func newInitCmd(cfgPath *string) *cobra.Command {
 					),
 				),
 				huh.NewGroup(
-					huh.NewConfirm().Title("Enable Web3 ruleset (EVM keys)?").Value(&enableWeb3),
+					huh.NewSelect[string]().Title("Redaction style").Value(&maskStyle).Options(
+						huh.NewOption("Classic blocks", string(types.MaskStyleBlock)),
+						huh.NewOption("Glow blocks", string(types.MaskStyleGlow)),
+						huh.NewOption("Morse code", string(types.MaskStyleMorse)),
+					),
+				),
+				huh.NewGroup(
+					huh.NewMultiSelect[string]().Title("Enable rulesets").Value(&selectedRulesets).Options(
+						huh.NewOption("Web3 (EVM keys)", "web3"),
+						huh.NewOption("API keys", "api_keys"),
+						huh.NewOption("Auth tokens (JWT/Bearer)", "auth_tokens"),
+						huh.NewOption("Cloud credentials", "cloud"),
+						huh.NewOption("Passwords", "passwords"),
+					),
 				),
 				huh.NewGroup(
 					huh.NewConfirm().Title("Enable copy-without-render?").Value(&copyEnabled),
@@ -222,7 +236,8 @@ func newInitCmd(cfgPath *string) *cobra.Command {
 			}
 
 			cfg.Mode = types.Mode(mode)
-			cfg.Rulesets.Web3.Enabled = enableWeb3
+			cfg.Masking.Style = types.MaskStyle(maskStyle)
+			applyRulesetSelections(&cfg, selectedRulesets)
 			cfg.Overrides.CopyWithoutRender.Enabled = copyEnabled
 			cfg.Overrides.CopyWithoutRender.RequireConfirm = requireConfirm
 			if copyEnabled {
@@ -486,7 +501,7 @@ func runDoctor(state *appState) error {
 func enabledRuleNames(cfg config.Config) []string {
 	var out []string
 	for _, rule := range cfg.Rules {
-		if rule.Enabled {
+		if rule.Enabled && config.RulesetEnabled(rule.Ruleset, cfg.Rulesets) {
 			out = append(out, rule.Name)
 		}
 	}
@@ -499,7 +514,7 @@ func enabledRuleNames(cfg config.Config) []string {
 func enabledDetectorNames(cfg config.Config) []string {
 	var out []string
 	for _, det := range cfg.TypedDetectors {
-		if det.Enabled {
+		if det.Enabled && config.RulesetEnabled(det.Ruleset, cfg.Rulesets) {
 			out = append(out, det.Name)
 		}
 	}

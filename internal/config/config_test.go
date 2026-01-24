@@ -38,7 +38,7 @@ func TestParseCanonicalConfig(t *testing.T) {
 	if cfg.Overrides.CopyWithoutRender.TTLSeconds != 30 {
 		t.Fatalf("ttl_seconds = %d", cfg.Overrides.CopyWithoutRender.TTLSeconds)
 	}
-	if len(cfg.Rules) != 1 {
+	if len(cfg.Rules) != 10 {
 		t.Fatalf("rules count = %d", len(cfg.Rules))
 	}
 	if len(cfg.TypedDetectors) != 1 {
@@ -65,5 +65,8 @@ func TestParseAppliesDefaults(t *testing.T) {
 	}
 	if cfg.Masking.BlockChar != defaultBlockChar {
 		t.Fatalf("block_char not default")
+	}
+	if cfg.Masking.Style != types.MaskStyleBlock {
+		t.Fatalf("masking.style not default")
 	}
 }

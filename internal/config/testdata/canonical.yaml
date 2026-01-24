@@ -16,12 +16,14 @@ redaction:
     rate_limit_ms: 2000
 
 masking:
+  style: block
   block_char: "\u2588"
   hex_random_same_length:
     uppercase: false
   stable_hash_token:
     enabled: false
     tag_len: 8
+  morse_message: SECRETTY
 
 overrides:
   copy_without_render:
@@ -34,6 +36,14 @@ rulesets:
   web3:
     enabled: true
     allow_bare_64hex: false
+  api_keys:
+    enabled: false
+  auth_tokens:
+    enabled: false
+  cloud:
+    enabled: false
+  passwords:
+    enabled: false
 
 rules:
   - name: env_private_key
@@ -41,10 +51,106 @@ rules:
     type: regex
     action: mask
     severity: high
+    secret_type: EVM_PK
+    ruleset: web3
     regex:
       pattern: "(?i)\\bPRIVATE_KEY\\s*=\\s*([^\\s]+)"
       group: 1
     context_keywords: ["private_key", "secret", "sk", "--private-key"]
+  - name: api_key_label
+    enabled: true
+    type: regex
+    action: mask
+    severity: high
+    secret_type: API_KEY
+    ruleset: api_keys
+    regex:
+      pattern: "(?i)\\b(api[_-]?key|x-api-key|client[_-]?secret|secret[_-]?key)\\b\\s*[:=]\\s*([A-Za-z0-9_\\-]{16,})"
+      group: 2
+    context_keywords: ["api_key", "x-api-key", "client_secret", "secret_key"]
+  - name: stripe_key
+    enabled: true
+    type: regex
+    action: mask
+    severity: high
+    secret_type: API_KEY
+    ruleset: api_keys
+    regex:
+      pattern: "\\b(sk_(live|test)_[0-9a-zA-Z]{16,})\\b"
+      group: 1
+  - name: github_pat
+    enabled: true
+    type: regex
+    action: mask
+    severity: high
+    secret_type: API_KEY
+    ruleset: api_keys
+    regex:
+      pattern: "\\bghp_[A-Za-z0-9]{36}\\b"
+      group: 0
+  - name: bearer_token
+    enabled: true
+    type: regex
+    action: mask
+    severity: high
+    secret_type: AUTH_TOKEN
+    ruleset: auth_tokens
+    regex:
+      pattern: "(?i)\\bBearer\\s+([A-Za-z0-9\\-._~+/]{20,}={0,2})"
+      group: 1
+  - name: auth_token_label
+    enabled: true
+    type: regex
+    action: mask
+    severity: high
+    secret_type: AUTH_TOKEN
+    ruleset: auth_tokens
+    regex:
+      pattern: "(?i)\\b(access|refresh|auth)[_-]?token\\b\\s*[:=]\\s*([^\\s]+)"
+      group: 2
+    context_keywords: ["token", "auth", "access", "refresh"]
+  - name: jwt_token
+    enabled: true
+    type: regex
+    action: mask
+    severity: high
+    secret_type: JWT
+    ruleset: auth_tokens
+    regex:
+      pattern: "\\b(eyJ[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+)\\b"
+      group: 1
+  - name: aws_access_key_id
+    enabled: true
+    type: regex
+    action: mask
+    severity: high
+    secret_type: CLOUD_CRED
+    ruleset: cloud
+    regex:
+      pattern: "\\bAKIA[0-9A-Z]{16}\\b"
+      group: 0
+  - name: aws_secret_access_key
+    enabled: true
+    type: regex
+    action: mask
+    severity: high
+    secret_type: CLOUD_CRED
+    ruleset: cloud
+    regex:
+      pattern: "(?i)\\baws_secret_access_key\\b\\s*[:=]\\s*([A-Za-z0-9/+=]{40})"
+      group: 1
+    context_keywords: ["aws", "secret_access_key"]
+  - name: password_label
+    enabled: true
+    type: regex
+    action: mask
+    severity: high
+    secret_type: PASSWORD
+    ruleset: passwords
+    regex:
+      pattern: "(?i)\\b(password|passwd|pwd|passphrase)\\b\\s*[:=]\\s*([^\\s]+)"
+      group: 2
+    context_keywords: ["password", "pwd", "passphrase"]
 
 typed_detectors:
   - name: evm_private_key
@@ -52,6 +158,8 @@ typed_detectors:
     kind: EVM_PRIVATE_KEY
     action: mask
     severity: high
+    secret_type: EVM_PK
+    ruleset: web3
     context_keywords: ["private_key", "--private-key", "secret", "sk="]
 
 debug:

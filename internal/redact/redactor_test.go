@@ -2,6 +2,8 @@ package redact
 
 import (
 	"bytes"
+	"regexp"
+	"strings"
 	"testing"
 
 	"github.com/suryansh-23/secretty/internal/config"
@@ -49,4 +51,55 @@ func TestHexRandomMaskKeepsPrefix(t *testing.T) {
 	if string(out[:2]) != "0x" {
 		t.Fatalf("prefix = %q", string(out[:2]))
 	}
+}
+
+func TestGlowMaskKeepsVisualLength(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Masking.Style = types.MaskStyleGlow
+	cfg.Masking.BlockChar = "#"
+	r := NewRedactor(cfg)
+
+	in := []byte("secret")
+	out, err := r.Apply(in, []Match{{
+		Start:      0,
+		End:        len(in),
+		Action:     types.ActionMask,
+		SecretType: types.SecretEvmPrivateKey,
+	}})
+	if err != nil {
+		t.Fatalf("apply: %v", err)
+	}
+	plain := stripANSI(string(out))
+	if plain != strings.Repeat("#", len(in)) {
+		t.Fatalf("plain output = %q", plain)
+	}
+	if !strings.Contains(string(out), "\x1b[0m") {
+		t.Fatalf("expected ANSI reset")
+	}
+}
+
+func TestMorseMaskMatchesLength(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Masking.Style = types.MaskStyleMorse
+	cfg.Masking.MorseMessage = "SOS"
+	r := NewRedactor(cfg)
+
+	in := []byte("secret")
+	out, err := r.Apply(in, []Match{{
+		Start:      0,
+		End:        len(in),
+		Action:     types.ActionMask,
+		SecretType: types.SecretEvmPrivateKey,
+	}})
+	if err != nil {
+		t.Fatalf("apply: %v", err)
+	}
+	if len(out) != len(in) {
+		t.Fatalf("len(out)=%d len(in)=%d", len(out), len(in))
+	}
+}
+
+func stripANSI(input string) string {
+	re := regexp.MustCompile(`\x1b\[[0-9;]*m`)
+	return re.ReplaceAllString(input, "")
 }

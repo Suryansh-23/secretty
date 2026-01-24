@@ -31,6 +31,7 @@ type compiledRule struct {
 	re       *regexp.Regexp
 	group    int
 	severity int
+	keywords []string
 }
 
 type typedDetector struct {
@@ -52,10 +53,14 @@ type Engine struct {
 
 // NewEngine builds a detector engine from config.
 func NewEngine(cfg config.Config) *Engine {
+	allowBare64Hex := cfg.Rulesets.Web3.AllowBare64Hex
+	if !cfg.Rulesets.Web3.Enabled {
+		allowBare64Hex = false
+	}
 	engine := &Engine{
 		evmWithPrefix:  regexp.MustCompile(`0x[0-9a-fA-F]{64}`),
 		evmBare:        regexp.MustCompile(`\b[0-9a-fA-F]{64}\b`),
-		allowBare64Hex: cfg.Rulesets.Web3.AllowBare64Hex,
+		allowBare64Hex: allowBare64Hex,
 	}
 
 	for _, rule := range cfg.Rules {
@@ -63,6 +68,9 @@ func NewEngine(cfg config.Config) *Engine {
 			continue
 		}
 		if rule.Type != config.RuleTypeRegex {
+			continue
+		}
+		if !config.RulesetEnabled(rule.Ruleset, cfg.Rulesets) {
 			continue
 		}
 		if rule.Regex == nil || rule.Regex.Pattern == "" {
@@ -73,11 +81,15 @@ func NewEngine(cfg config.Config) *Engine {
 			re:       regexp.MustCompile(rule.Regex.Pattern),
 			group:    rule.Regex.Group,
 			severity: severityRank(rule.Severity),
+			keywords: lowerKeywords(rule.ContextKeywords),
 		})
 	}
 
 	for _, det := range cfg.TypedDetectors {
 		if !det.Enabled {
+			continue
+		}
+		if !config.RulesetEnabled(det.Ruleset, cfg.Rulesets) {
 			continue
 		}
 		engine.typed = append(engine.typed, typedDetector{
@@ -120,12 +132,19 @@ func (e *Engine) findRegexMatches(text []byte) []candidate {
 			if start < 0 || end <= start {
 				continue
 			}
+			if len(rule.keywords) > 0 && !hasContextKeyword(text, start, end, rule.keywords) {
+				continue
+			}
+			secretType := rule.rule.SecretType
+			if secretType == "" {
+				secretType = types.SecretUnknown
+			}
 			out = append(out, candidate{
 				match: redact.Match{
 					Start:      start,
 					End:        end,
 					Action:     rule.rule.Action,
-					SecretType: types.SecretEvmPrivateKey,
+					SecretType: secretType,
 					RuleName:   rule.rule.Name,
 				},
 				severity: rule.severity,
@@ -177,12 +196,16 @@ func (e *Engine) buildTypedCandidate(text []byte, start, end int, det typedDetec
 	if score < 2 {
 		return nil
 	}
+	secretType := det.detector.SecretType
+	if secretType == "" {
+		secretType = types.SecretUnknown
+	}
 	return []candidate{{
 		match: redact.Match{
 			Start:      start,
 			End:        end,
 			Action:     det.detector.Action,
-			SecretType: types.SecretEvmPrivateKey,
+			SecretType: secretType,
 			RuleName:   det.detector.Name,
 		},
 		severity: det.severity,

@@ -79,10 +79,21 @@ func (r *Redactor) maskBytes(original []byte, match Match) []byte {
 	if r.cfg.Masking.StableHashToken.Enabled {
 		return r.stableHashToken(match)
 	}
-	if match.SecretType == types.SecretEvmPrivateKey || looksHex(original) {
-		return r.hexRandomSameLength(original, r.cfg.Masking.HexRandomSameLength.Uppercase)
+	style := r.cfg.Masking.Style
+	if style == "" {
+		style = types.MaskStyleBlock
 	}
-	return maskBlock(original, r.cfg.Masking.BlockChar)
+	switch style {
+	case types.MaskStyleGlow:
+		return maskGlow(original, r.cfg.Masking.BlockChar)
+	case types.MaskStyleMorse:
+		return maskMorse(original, r.cfg.Masking.MorseMessage)
+	default:
+		if match.SecretType == types.SecretEvmPrivateKey || looksHex(original) {
+			return r.hexRandomSameLength(original, r.cfg.Masking.HexRandomSameLength.Uppercase)
+		}
+		return maskBlock(original, r.cfg.Masking.BlockChar)
+	}
 }
 
 func (r *Redactor) placeholder(match Match) []byte {
@@ -174,4 +185,110 @@ func randomHexNibble(rng io.Reader, uppercase bool) byte {
 		digits = "0123456789abcdef"
 	}
 	return digits[idx]
+}
+
+type rgb struct {
+	r int
+	g int
+	b int
+}
+
+var glowPalette = []rgb{
+	{r: 34, g: 211, b: 238},
+	{r: 56, g: 189, b: 248},
+	{r: 96, g: 165, b: 250},
+	{r: 167, g: 139, b: 250},
+	{r: 244, g: 114, b: 182},
+	{r: 251, g: 113, b: 133},
+}
+
+func maskGlow(original []byte, blockChar string) []byte {
+	runes := utf8.RuneCount(original)
+	if runes <= 0 {
+		return nil
+	}
+	if blockChar == "" {
+		blockChar = "\u2588"
+	}
+	var out bytes.Buffer
+	for i := 0; i < runes; i++ {
+		color := glowPalette[i%len(glowPalette)]
+		out.WriteString(fmt.Sprintf("\x1b[38;2;%d;%d;%dm", color.r, color.g, color.b))
+		out.WriteString(blockChar)
+	}
+	out.WriteString("\x1b[0m")
+	return out.Bytes()
+}
+
+var morseAlphabet = map[rune]string{
+	'A': ".-",
+	'B': "-...",
+	'C': "-.-.",
+	'D': "-..",
+	'E': ".",
+	'F': "..-.",
+	'G': "--.",
+	'H': "....",
+	'I': "..",
+	'J': ".---",
+	'K': "-.-",
+	'L': ".-..",
+	'M': "--",
+	'N': "-.",
+	'O': "---",
+	'P': ".--.",
+	'Q': "--.-",
+	'R': ".-.",
+	'S': "...",
+	'T': "-",
+	'U': "..-",
+	'V': "...-",
+	'W': ".--",
+	'X': "-..-",
+	'Y': "-.--",
+	'Z': "--..",
+	'0': "-----",
+	'1': ".----",
+	'2': "..---",
+	'3': "...--",
+	'4': "....-",
+	'5': ".....",
+	'6': "-....",
+	'7': "--...",
+	'8': "---..",
+	'9': "----.",
+}
+
+func maskMorse(original []byte, message string) []byte {
+	runes := utf8.RuneCount(original)
+	if runes <= 0 {
+		return nil
+	}
+	pattern := strings.TrimSpace(morsePattern(message))
+	if pattern == "" {
+		pattern = "... --- ..."
+	}
+	out := pattern
+	for len(out) < runes {
+		out = out + " " + pattern
+	}
+	return []byte(out[:runes])
+}
+
+func morsePattern(message string) string {
+	msg := strings.ToUpper(strings.TrimSpace(message))
+	if msg == "" {
+		msg = "SECRETTY"
+	}
+	var parts []string
+	for _, r := range msg {
+		if r == ' ' {
+			parts = append(parts, "/")
+			continue
+		}
+		if code, ok := morseAlphabet[r]; ok {
+			parts = append(parts, code)
+		}
+	}
+	return strings.Join(parts, " ")
 }
