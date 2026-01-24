@@ -1,0 +1,161 @@
+package ipc
+
+import (
+	"encoding/json"
+	"errors"
+	"fmt"
+	"net"
+	"os"
+	"path/filepath"
+	"time"
+
+	"github.com/suryansh-23/secretty/internal/cache"
+	"github.com/suryansh-23/secretty/internal/clipboard"
+)
+
+const (
+	defaultTimeout = 2 * time.Second
+)
+
+type request struct {
+	Op string `json:"op"`
+}
+
+type response struct {
+	OK       bool   `json:"ok"`
+	Error    string `json:"error,omitempty"`
+	ID       int    `json:"id,omitempty"`
+	RuleName string `json:"rule_name,omitempty"`
+	Type     string `json:"type,omitempty"`
+}
+
+// CopyResponse describes the copy-last response.
+type CopyResponse struct {
+	ID       int
+	RuleName string
+	Type     string
+}
+
+// Server serves IPC requests for a running session.
+type Server struct {
+	listener net.Listener
+	cache    *cache.Cache
+	copyFn   func([]byte) error
+}
+
+// StartServer starts a Unix socket server at path.
+func StartServer(path string, cache *cache.Cache, copyFn func([]byte) error) (*Server, error) {
+	if cache == nil {
+		return nil, errors.New("no cache available")
+	}
+	if copyFn == nil {
+		copyFn = clipboard.CopyBytes
+	}
+	listener, err := net.Listen("unix", path)
+	if err != nil {
+		return nil, err
+	}
+	_ = os.Chmod(path, 0o600)
+	server := &Server{listener: listener, cache: cache, copyFn: copyFn}
+	go server.serve()
+	return server, nil
+}
+
+// Close shuts down the server.
+func (s *Server) Close() error {
+	if s == nil || s.listener == nil {
+		return nil
+	}
+	return s.listener.Close()
+}
+
+// TempSocketPath creates a unique socket path under the OS temp dir.
+func TempSocketPath() (string, error) {
+	dir := os.TempDir()
+	if len(dir) > 60 {
+		dir = "/tmp"
+	}
+	for i := 0; i < 5; i++ {
+		name := fmt.Sprintf("secretty-%d-%d.sock", os.Getpid(), time.Now().UnixNano()+int64(i))
+		path := filepath.Join(dir, name)
+		if len(path) >= 100 {
+			if dir != "/tmp" {
+				dir = "/tmp"
+				continue
+			}
+			return "", fmt.Errorf("socket path too long")
+		}
+		if _, err := os.Stat(path); errors.Is(err, os.ErrNotExist) {
+			return path, nil
+		}
+	}
+	return "", errors.New("unable to allocate socket path")
+}
+
+// CopyLast connects to the server and requests a copy of the last secret.
+func CopyLast(socketPath string) (CopyResponse, error) {
+	conn, err := net.DialTimeout("unix", socketPath, defaultTimeout)
+	if err != nil {
+		return CopyResponse{}, err
+	}
+	defer func() { _ = conn.Close() }()
+	_ = conn.SetDeadline(time.Now().Add(defaultTimeout))
+
+	enc := json.NewEncoder(conn)
+	dec := json.NewDecoder(conn)
+	if err := enc.Encode(request{Op: "copy-last"}); err != nil {
+		return CopyResponse{}, err
+	}
+	var resp response
+	if err := dec.Decode(&resp); err != nil {
+		return CopyResponse{}, err
+	}
+	if !resp.OK {
+		if resp.Error == "" {
+			return CopyResponse{}, errors.New("copy failed")
+		}
+		return CopyResponse{}, errors.New(resp.Error)
+	}
+	return CopyResponse{ID: resp.ID, RuleName: resp.RuleName, Type: resp.Type}, nil
+}
+
+func (s *Server) serve() {
+	for {
+		conn, err := s.listener.Accept()
+		if err != nil {
+			if errors.Is(err, net.ErrClosed) {
+				return
+			}
+			continue
+		}
+		go s.handle(conn)
+	}
+}
+
+func (s *Server) handle(conn net.Conn) {
+	defer func() { _ = conn.Close() }()
+	_ = conn.SetDeadline(time.Now().Add(defaultTimeout))
+
+	dec := json.NewDecoder(conn)
+	enc := json.NewEncoder(conn)
+	var req request
+	if err := dec.Decode(&req); err != nil {
+		_ = enc.Encode(response{OK: false, Error: "invalid request"})
+		return
+	}
+	switch req.Op {
+	case "copy-last":
+		rec, ok := s.cache.GetLast()
+		if !ok {
+			_ = enc.Encode(response{OK: false, Error: "no secrets cached"})
+			return
+		}
+		if err := s.copyFn(rec.Original); err != nil {
+			_ = enc.Encode(response{OK: false, Error: err.Error()})
+			return
+		}
+		_ = enc.Encode(response{OK: true, ID: rec.ID, RuleName: rec.RuleName, Type: string(rec.Type)})
+	default:
+		_ = enc.Encode(response{OK: false, Error: "unknown operation"})
+	}
+}

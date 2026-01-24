@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -19,6 +20,7 @@ import (
 	"github.com/suryansh-23/secretty/internal/config"
 	"github.com/suryansh-23/secretty/internal/debug"
 	"github.com/suryansh-23/secretty/internal/detect"
+	"github.com/suryansh-23/secretty/internal/ipc"
 	"github.com/suryansh-23/secretty/internal/ptywrap"
 	"github.com/suryansh-23/secretty/internal/redact"
 	"github.com/suryansh-23/secretty/internal/types"
@@ -128,7 +130,11 @@ func newShellCmd(state *appState) *cobra.Command {
 				if len(shellArgs) == 0 {
 					return errors.New("shell requires a command after --")
 				}
-				command = exec.Command(shellArgs[0], shellArgs[1:]...)
+				var err error
+				command, err = shellCommandFromArgs(shellArgs)
+				if err != nil {
+					return err
+				}
 			}
 			return runWithPTY(cmd.Context(), state.cfg, command, state.cache, state.logger, true)
 		},
@@ -260,9 +266,6 @@ func newCopyCmd(state *appState) *cobra.Command {
 			if state.cfg.Mode == types.ModeStrict && state.cfg.Strict.DisableCopyOriginal {
 				return errors.New("copy original is disabled in strict mode")
 			}
-			if state.cache == nil {
-				return errors.New("no secret cache available")
-			}
 			if state.cfg.Overrides.CopyWithoutRender.RequireConfirm {
 				confirm := false
 				form := huh.NewForm(huh.NewGroup(huh.NewConfirm().Title("Copy last secret to clipboard?").Value(&confirm)))
@@ -272,6 +275,21 @@ func newCopyCmd(state *appState) *cobra.Command {
 				if !confirm {
 					return errors.New("copy cancelled")
 				}
+			}
+			if socketPath := os.Getenv("SECRETTY_SOCKET"); socketPath != "" {
+				resp, err := ipc.CopyLast(socketPath)
+				if err != nil {
+					return err
+				}
+				if state.cfg.Redaction.IncludeEventID && resp.ID > 0 {
+					fmt.Printf("Copied secret %d to clipboard\n", resp.ID)
+				} else {
+					fmt.Println("Copied secret to clipboard")
+				}
+				return nil
+			}
+			if state.cache == nil {
+				return errors.New("no secret cache available")
 			}
 			record, ok := state.cache.GetLast()
 			if !ok {
@@ -306,11 +324,102 @@ func defaultShellCommand() *exec.Cmd {
 	if shell == "" {
 		shell = "/bin/zsh"
 	}
-	return exec.Command(shell, "-l")
+	return exec.Command(shell, "-l", "-i")
+}
+
+func shellCommandFromArgs(args []string) (*exec.Cmd, error) {
+	if len(args) == 0 {
+		return nil, errors.New("shell requires a command after --")
+	}
+	if len(args) == 1 && looksLikeShell(args[0]) {
+		return exec.Command(args[0], "-l", "-i"), nil
+	}
+	return exec.Command(args[0], args[1:]...), nil
+}
+
+func looksLikeShell(path string) bool {
+	base := filepath.Base(path)
+	switch base {
+	case "zsh", "bash", "fish", "sh":
+		return true
+	default:
+		return false
+	}
+}
+
+func defaultRulesetSelections(cfg config.Config) []string {
+	var out []string
+	if cfg.Rulesets.Web3.Enabled {
+		out = append(out, "web3")
+	}
+	if cfg.Rulesets.APIKeys.Enabled {
+		out = append(out, "api_keys")
+	}
+	if cfg.Rulesets.AuthTokens.Enabled {
+		out = append(out, "auth_tokens")
+	}
+	if cfg.Rulesets.Cloud.Enabled {
+		out = append(out, "cloud")
+	}
+	if cfg.Rulesets.Passwords.Enabled {
+		out = append(out, "passwords")
+	}
+	return out
+}
+
+func applyRulesetSelections(cfg *config.Config, selected []string) {
+	set := make(map[string]bool, len(selected))
+	for _, name := range selected {
+		set[name] = true
+	}
+	cfg.Rulesets.Web3.Enabled = set["web3"]
+	cfg.Rulesets.APIKeys.Enabled = set["api_keys"]
+	cfg.Rulesets.AuthTokens.Enabled = set["auth_tokens"]
+	cfg.Rulesets.Cloud.Enabled = set["cloud"]
+	cfg.Rulesets.Passwords.Enabled = set["passwords"]
+}
+
+func startIPCServer(cfg config.Config, cache *cache.Cache) (string, func(), error) {
+	if cache == nil {
+		return "", nil, nil
+	}
+	if !cfg.Overrides.CopyWithoutRender.Enabled {
+		return "", nil, nil
+	}
+	if cfg.Mode == types.ModeStrict && cfg.Strict.DisableCopyOriginal {
+		return "", nil, nil
+	}
+	socketPath, err := ipc.TempSocketPath()
+	if err != nil {
+		return "", nil, err
+	}
+	server, err := ipc.StartServer(socketPath, cache, nil)
+	if err != nil {
+		_ = os.Remove(socketPath)
+		return "", nil, err
+	}
+	cleanup := func() {
+		_ = server.Close()
+		_ = os.Remove(socketPath)
+	}
+	return socketPath, cleanup, nil
 }
 
 func runWithPTY(ctx context.Context, cfg config.Config, command *exec.Cmd, cache *cache.Cache, logger *debug.Logger, interactive bool) error {
 	command.Env = os.Environ()
+	cleanup := func() {}
+	if cache != nil {
+		socketPath, closeFn, err := startIPCServer(cfg, cache)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "secretty: copy cache unavailable:", err)
+		} else if socketPath != "" {
+			command.Env = append(command.Env, "SECRETTY_SOCKET="+socketPath)
+			if closeFn != nil {
+				cleanup = closeFn
+			}
+		}
+	}
+	defer cleanup()
 	if interactive {
 		cfg.Redaction.RollingWindowBytes = 0
 	}
@@ -366,7 +475,11 @@ func runDoctor(state *appState) error {
 	fmt.Printf("status_line_rate_limit_ms=%d\n", state.cfg.Redaction.StatusLine.RateLimitMS)
 	fmt.Printf("rules_enabled=%s\n", strings.Join(enabledRuleNames(state.cfg), ","))
 	fmt.Printf("typed_detectors_enabled=%s\n", strings.Join(enabledDetectorNames(state.cfg), ","))
-	fmt.Println("cache_scope=in-process")
+	cacheScope := "in-process"
+	if os.Getenv("SECRETTY_SOCKET") != "" {
+		cacheScope = "ipc"
+	}
+	fmt.Printf("cache_scope=%s\n", cacheScope)
 	return nil
 }
 
