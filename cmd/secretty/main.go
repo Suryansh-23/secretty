@@ -90,7 +90,7 @@ func newRootCmd(state *appState) *cobra.Command {
 		},
 		RunE: func(cmd *cobra.Command, args []string) error {
 			command := defaultShellCommand()
-			return runWithPTY(cmd.Context(), state.cfg, command, state.cache, state.logger, true)
+			return runWithPTY(cmd.Context(), state.cfg, state.cfgPath, command, state.cache, state.logger, true)
 		},
 	}
 
@@ -138,7 +138,7 @@ func newShellCmd(state *appState) *cobra.Command {
 					return err
 				}
 			}
-			return runWithPTY(cmd.Context(), state.cfg, command, state.cache, state.logger, true)
+			return runWithPTY(cmd.Context(), state.cfg, state.cfgPath, command, state.cache, state.logger, true)
 		},
 	}
 }
@@ -156,7 +156,7 @@ func newRunCmd(state *appState) *cobra.Command {
 				return errors.New("run requires a command after --")
 			}
 			command := exec.Command(runArgs[0], runArgs[1:]...)
-			return runWithPTY(cmd.Context(), state.cfg, command, state.cache, state.logger, false)
+			return runWithPTY(cmd.Context(), state.cfg, state.cfgPath, command, state.cache, state.logger, false)
 		},
 	}
 }
@@ -175,6 +175,8 @@ func newInitCmd(cfgPath *string) *cobra.Command {
 			mode := string(cfg.Mode)
 			maskStyle := string(cfg.Masking.Style)
 			selectedRulesets := defaultRulesetSelections(cfg)
+			shellOptions := detectShellOptions()
+			selectedShells := defaultShellSelections(shellOptions)
 			copyEnabled := cfg.Overrides.CopyWithoutRender.Enabled
 			requireConfirm := cfg.Overrides.CopyWithoutRender.RequireConfirm
 			ttlStr := strconv.Itoa(cfg.Overrides.CopyWithoutRender.TTLSeconds)
@@ -213,6 +215,11 @@ func newInitCmd(cfgPath *string) *cobra.Command {
 						huh.NewOption("Passwords", "passwords"),
 					),
 				),
+				huh.NewGroup(
+					huh.NewMultiSelect[string]().Title("Install SecreTTY shell hook in").Value(&selectedShells).Options(
+						shellOptionsToOptions(shellOptions)...,
+					),
+				).WithHideFunc(func() bool { return len(shellOptions) == 0 }),
 				huh.NewGroup(
 					huh.NewConfirm().Title("Enable copy-without-render?").Value(&copyEnabled),
 				),
@@ -260,6 +267,12 @@ func newInitCmd(cfgPath *string) *cobra.Command {
 				return err
 			}
 			fmt.Printf("Wrote config to %s\n", path)
+
+			if len(selectedShells) > 0 {
+				if err := installShellHooks(selectedShells, shellOptions, path); err != nil {
+					return err
+				}
+			}
 			return nil
 		},
 	}
@@ -453,6 +466,77 @@ func applyRulesetSelections(cfg *config.Config, selected []string) {
 	cfg.Rulesets.Passwords.Enabled = set["passwords"]
 }
 
+type shellOption struct {
+	Name string
+	Kind string
+	Path string
+}
+
+func detectShellOptions() []shellOption {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return nil
+	}
+	candidates := []shellOption{
+		{Name: "zsh", Kind: "zsh", Path: filepath.Join(home, ".zshrc")},
+		{Name: "bash", Kind: "bash", Path: filepath.Join(home, ".bashrc")},
+		{Name: "fish", Kind: "fish", Path: filepath.Join(home, ".config", "fish", "config.fish")},
+	}
+	current := filepath.Base(os.Getenv("SHELL"))
+	etcShells := readEtcShells()
+	var out []shellOption
+	for _, candidate := range candidates {
+		if candidate.Kind == current || exists(candidate.Path) || etcShells[candidate.Kind] || hasInPath(candidate.Kind) {
+			out = append(out, candidate)
+		}
+	}
+	if len(out) == 0 {
+		return candidates
+	}
+	return out
+}
+
+func defaultShellSelections(options []shellOption) []string {
+	current := filepath.Base(os.Getenv("SHELL"))
+	var out []string
+	for _, opt := range options {
+		if opt.Kind == current {
+			out = append(out, opt.Kind)
+		}
+	}
+	return out
+}
+
+func shellOptionsToOptions(options []shellOption) []huh.Option[string] {
+	out := make([]huh.Option[string], 0, len(options))
+	for _, opt := range options {
+		label := fmt.Sprintf("%s (%s)", opt.Name, opt.Path)
+		out = append(out, huh.NewOption(label, opt.Kind))
+	}
+	return out
+}
+
+func installShellHooks(selected []string, options []shellOption, configPath string) error {
+	lookup := make(map[string]shellOption, len(options))
+	for _, opt := range options {
+		lookup[opt.Kind] = opt
+	}
+	for _, kind := range selected {
+		opt, ok := lookup[kind]
+		if !ok {
+			continue
+		}
+		changed, err := shellconfig.InstallBlock(opt.Path, opt.Kind, configPath)
+		if err != nil {
+			return err
+		}
+		if changed {
+			fmt.Printf("Installed shell hook in %s\n", opt.Path)
+		}
+	}
+	return nil
+}
+
 func defaultShellConfigPaths() []string {
 	home, err := os.UserHomeDir()
 	if err != nil {
@@ -466,6 +550,27 @@ func defaultShellConfigPaths() []string {
 		filepath.Join(home, ".profile"),
 		filepath.Join(home, ".config", "fish", "config.fish"),
 	}
+}
+
+func readEtcShells() map[string]bool {
+	data, err := os.ReadFile("/etc/shells")
+	if err != nil {
+		return map[string]bool{}
+	}
+	out := make(map[string]bool)
+	for _, line := range strings.Split(string(data), "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		out[filepath.Base(line)] = true
+	}
+	return out
+}
+
+func hasInPath(name string) bool {
+	_, err := exec.LookPath(name)
+	return err == nil
 }
 
 func removeConfigFile(path string) (bool, error) {
@@ -516,8 +621,11 @@ func startIPCServer(cfg config.Config, cache *cache.Cache) (string, func(), erro
 	return socketPath, cleanup, nil
 }
 
-func runWithPTY(ctx context.Context, cfg config.Config, command *exec.Cmd, cache *cache.Cache, logger *debug.Logger, interactive bool) error {
+func runWithPTY(ctx context.Context, cfg config.Config, cfgPath string, command *exec.Cmd, cache *cache.Cache, logger *debug.Logger, interactive bool) error {
 	command.Env = os.Environ()
+	if cfgPath != "" && os.Getenv("SECRETTY_CONFIG") == "" {
+		command.Env = append(command.Env, "SECRETTY_CONFIG="+cfgPath)
+	}
 	cleanup := func() {}
 	if cache != nil {
 		socketPath, closeFn, err := startIPCServer(cfg, cache)
@@ -624,6 +732,9 @@ func resolveConfigPath(override string) (string, error) {
 	override = strings.TrimSpace(override)
 	if override != "" {
 		return override, nil
+	}
+	if env := strings.TrimSpace(os.Getenv("SECRETTY_CONFIG")); env != "" {
+		return env, nil
 	}
 	return config.DefaultPath()
 }

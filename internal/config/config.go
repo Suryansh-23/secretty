@@ -393,11 +393,11 @@ func RulesetEnabled(name string, sets Rulesets) bool {
 
 // DefaultPath returns the default config path.
 func DefaultPath() (string, error) {
-	dir, err := os.UserConfigDir()
+	home, err := os.UserHomeDir()
 	if err != nil {
-		return "", fmt.Errorf("resolve config dir: %w", err)
+		return "", fmt.Errorf("resolve home dir: %w", err)
 	}
-	return filepath.Join(dir, defaultConfigRelPath), nil
+	return filepath.Join(home, ".config", defaultConfigRelPath), nil
 }
 
 // Parse parses YAML config content, applying defaults.

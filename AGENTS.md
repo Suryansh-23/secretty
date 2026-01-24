@@ -80,3 +80,4 @@
 - 2026-01-24: Expanded rulesets + redaction styles (block/glow/morse), added multi-select onboarding for rulesets, updated config schema/tests/canonical YAML, and refreshed README. Lint/test/build/smoke run succeeded.
 - 2026-01-24: Added `secretty reset` command to remove config and SecreTTY-marked shell blocks, plus shellconfig helper/tests and README updates. Lint/test/build/smoke run succeeded.
 - 2026-01-24: Fixed UTF-8 boundary handling in streaming redaction (prevents icon glyph corruption) and added tests. Lint/test/build/smoke run succeeded.
+- 2026-01-24: Config path now defaults to `~/.config/secretty/config.yaml` with `SECRETTY_CONFIG` overrides, onboarding can install shell hooks for detected shells, and child shells inherit `SECRETTY_CONFIG`. Lint/test/build/smoke run succeeded.

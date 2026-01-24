@@ -4,7 +4,9 @@ import (
 	"bufio"
 	"bytes"
 	"errors"
+	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 )
 
@@ -12,6 +14,34 @@ const (
 	beginMarker = "# >>> secretty >>>"
 	endMarker   = "# <<< secretty <<<"
 )
+
+// InstallBlock removes any existing block and appends a new one.
+func InstallBlock(path, shellKind, configPath string) (bool, error) {
+	block, err := blockForShell(shellKind, configPath)
+	if err != nil {
+		return false, err
+	}
+	_, err = RemoveBlock(path)
+	if err != nil {
+		return false, err
+	}
+	dir := filepath.Dir(path)
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return false, err
+	}
+	content, perm, err := readFileWithPerm(path)
+	if err != nil {
+		return false, err
+	}
+	if len(content) > 0 && !bytes.HasSuffix(content, []byte("\n")) {
+		content = append(content, '\n')
+	}
+	content = append(content, []byte(strings.Join(block, "\n")+"\n")...)
+	if err := os.WriteFile(path, content, perm); err != nil {
+		return false, err
+	}
+	return true, nil
+}
 
 // RemoveBlock removes the SecreTTY marker block from a shell config file.
 func RemoveBlock(path string) (bool, error) {
@@ -64,4 +94,44 @@ func RemoveBlock(path string) (bool, error) {
 		return false, err
 	}
 	return true, nil
+}
+
+func blockForShell(kind, configPath string) ([]string, error) {
+	configPath = strings.TrimSpace(configPath)
+	if configPath == "" {
+		return nil, errors.New("config path required")
+	}
+	switch kind {
+	case "zsh", "bash", "sh":
+		return []string{
+			beginMarker,
+			fmt.Sprintf("export SECRETTY_CONFIG=\"%s\"", configPath),
+			"alias safe='secretty'",
+			endMarker,
+		}, nil
+	case "fish":
+		return []string{
+			beginMarker,
+			fmt.Sprintf("set -gx SECRETTY_CONFIG \"%s\"", configPath),
+			"alias safe \"secretty\"",
+			endMarker,
+		}, nil
+	default:
+		return nil, fmt.Errorf("unsupported shell: %s", kind)
+	}
+}
+
+func readFileWithPerm(path string) ([]byte, os.FileMode, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil, 0o644, nil
+		}
+		return nil, 0, err
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		return nil, 0, err
+	}
+	return data, info.Mode().Perm(), nil
 }

@@ -3,6 +3,7 @@ package shellconfig
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -36,5 +37,23 @@ func TestRemoveBlock(t *testing.T) {
 	expected := "line1\nline2\n"
 	if string(data) != expected {
 		t.Fatalf("output = %q", string(data))
+	}
+}
+
+func TestInstallBlock(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "shellrc")
+	changed, err := InstallBlock(path, "zsh", "/tmp/secretty/config.yaml")
+	if err != nil {
+		t.Fatalf("install: %v", err)
+	}
+	if !changed {
+		t.Fatalf("expected change")
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read: %v", err)
+	}
+	if !strings.Contains(string(data), "SECRETTY_CONFIG") {
+		t.Fatalf("expected config export")
 	}
 }

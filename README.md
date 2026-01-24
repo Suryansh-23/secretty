@@ -48,13 +48,14 @@ Binary output: `bin/secretty`
 ./bin/secretty init
 ```
 The wizard shows an animated logo header and guides the user through mode, ruleset, and clipboard settings before writing `~/.config/secretty/config.yaml`.
-It now also includes redaction style selection and multi-select rulesets.
+It now also includes redaction style selection, multi-select rulesets, and optional shell hook installation.
 
 ## Configuration
 Default path:
 ```
 ~/.config/secretty/config.yaml
 ```
+You can override the path with the `SECRETTY_CONFIG` environment variable or `--config`.
 
 Example config (ASCII placeholder form):
 ```yaml
