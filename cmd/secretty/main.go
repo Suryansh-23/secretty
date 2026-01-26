@@ -104,6 +104,7 @@ func newRootCmd(state *appState) *cobra.Command {
 	rootCmd.AddCommand(newInitCmd(&cfgPath))
 	rootCmd.AddCommand(newResetCmd(&cfgPath))
 	rootCmd.AddCommand(newCopyCmd(state))
+	rootCmd.AddCommand(newStatusCmd(state))
 	rootCmd.AddCommand(newDoctorCmd(state))
 
 	return rootCmd
@@ -406,6 +407,25 @@ func newDoctorCmd(state *appState) *cobra.Command {
 	}
 }
 
+func newStatusCmd(state *appState) *cobra.Command {
+	return &cobra.Command{
+		Use:   "status",
+		Short: "Print SecreTTY wrapper status",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			wrapped := os.Getenv("SECRETTY_WRAPPED") != ""
+			socket := os.Getenv("SECRETTY_SOCKET") != ""
+			fmt.Printf("wrapped=%t\n", wrapped)
+			fmt.Printf("ipc_socket=%t\n", socket)
+			if envCfg := strings.TrimSpace(os.Getenv("SECRETTY_CONFIG")); envCfg != "" {
+				fmt.Printf("config=%s\n", envCfg)
+			} else {
+				fmt.Printf("config=%s\n", state.cfgPath)
+			}
+			return nil
+		},
+	}
+}
+
 func defaultShellCommand() *exec.Cmd {
 	shell := os.Getenv("SHELL")
 	if shell == "" {
@@ -623,6 +643,9 @@ func startIPCServer(cfg config.Config, cache *cache.Cache) (string, func(), erro
 
 func runWithPTY(ctx context.Context, cfg config.Config, cfgPath string, command *exec.Cmd, cache *cache.Cache, logger *debug.Logger, interactive bool) error {
 	command.Env = os.Environ()
+	if os.Getenv("SECRETTY_WRAPPED") == "" {
+		command.Env = append(command.Env, "SECRETTY_WRAPPED=1")
+	}
 	if cfgPath != "" && os.Getenv("SECRETTY_CONFIG") == "" {
 		command.Env = append(command.Env, "SECRETTY_CONFIG="+cfgPath)
 	}

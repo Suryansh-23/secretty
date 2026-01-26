@@ -11,6 +11,7 @@ import (
 	"syscall"
 
 	"github.com/creack/pty"
+	"golang.org/x/sys/unix"
 	"golang.org/x/term"
 )
 
@@ -22,10 +23,23 @@ type Options struct {
 
 // RunCommand starts cmd under a PTY and proxies IO.
 func RunCommand(ctx context.Context, cmd *exec.Cmd, opts Options) (int, error) {
-	ptmx, err := pty.Start(cmd)
+	ptmx, tty, err := pty.Open()
 	if err != nil {
-		return 1, fmt.Errorf("start pty: %w", err)
+		return 1, fmt.Errorf("open pty: %w", err)
 	}
+	defer func() { _ = ptmx.Close() }()
+
+	if err := inheritTermios(tty); err != nil {
+		_ = tty.Close()
+		return 1, err
+	}
+	prepareCommand(cmd, tty)
+	if err := cmd.Start(); err != nil {
+		_ = tty.Close()
+		return 1, fmt.Errorf("start pty command: %w", err)
+	}
+	_ = tty.Close()
+
 	out := opts.Output
 	if out == nil {
 		out = os.Stdout
@@ -82,14 +96,82 @@ func maybeMakeRaw(enable bool) (func(), error) {
 		return nil, nil
 	}
 	fd := int(os.Stdin.Fd())
-	if !term.IsTerminal(fd) {
+	return makeRawWithSignals(fd)
+}
+
+func makeRawWithSignals(fd int) (func(), error) {
+	if fd < 0 || !term.IsTerminal(fd) {
 		return nil, nil
 	}
 	state, err := term.MakeRaw(fd)
 	if err != nil {
-		return nil, fmt.Errorf("set raw mode: %w", err)
+		return nil, fmt.Errorf("make raw: %w", err)
+	}
+	termios, err := getTermios(fd)
+	if err != nil {
+		_ = term.Restore(fd, state)
+		return nil, err
+	}
+	if termios != nil {
+		// Re-enable signals so Ctrl+C/Ctrl+Z still generate SIGINT/SIGTSTP.
+		termios.Lflag |= unix.ISIG
+		if err := setTermios(fd, termios); err != nil {
+			_ = term.Restore(fd, state)
+			return nil, fmt.Errorf("set termios: %w", err)
+		}
 	}
 	return func() { _ = term.Restore(fd, state) }, nil
+}
+
+func getTermios(fd int) (*unix.Termios, error) {
+	termios, err := unix.IoctlGetTermios(fd, unix.TIOCGETA)
+	if err != nil {
+		if errors.Is(err, unix.ENOTTY) || errors.Is(err, syscall.ENOTTY) || errors.Is(err, syscall.EOPNOTSUPP) || errors.Is(err, syscall.ENOTSUP) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	copy := *termios
+	return &copy, nil
+}
+
+func setTermios(fd int, termios *unix.Termios) error {
+	if termios == nil {
+		return nil
+	}
+	return unix.IoctlSetTermios(fd, unix.TIOCSETA, termios)
+}
+
+func inheritTermios(tty *os.File) error {
+	if tty == nil {
+		return nil
+	}
+	if !term.IsTerminal(int(os.Stdin.Fd())) {
+		return nil
+	}
+	termios, err := getTermios(int(os.Stdin.Fd()))
+	if err != nil {
+		return fmt.Errorf("get terminal settings: %w", err)
+	}
+	if termios == nil {
+		return nil
+	}
+	if err := setTermios(int(tty.Fd()), termios); err != nil {
+		return fmt.Errorf("set pty terminal settings: %w", err)
+	}
+	return nil
+}
+
+func prepareCommand(cmd *exec.Cmd, tty *os.File) {
+	cmd.Stdin = tty
+	cmd.Stdout = tty
+	cmd.Stderr = tty
+	if cmd.SysProcAttr == nil {
+		cmd.SysProcAttr = &syscall.SysProcAttr{}
+	}
+	cmd.SysProcAttr.Setsid = true
+	cmd.SysProcAttr.Setctty = true
+	cmd.SysProcAttr.Ctty = 0
 }
 
 func forwardSignals(proc *os.Process, ptmx *os.File) func() {
@@ -97,7 +179,7 @@ func forwardSignals(proc *os.Process, ptmx *os.File) func() {
 		return func() {}
 	}
 	ch := make(chan os.Signal, 8)
-	signal.Notify(ch, syscall.SIGWINCH, syscall.SIGINT, syscall.SIGTERM)
+	signal.Notify(ch, syscall.SIGWINCH, syscall.SIGINT, syscall.SIGTERM, syscall.SIGQUIT, syscall.SIGTSTP)
 
 	done := make(chan struct{})
 	go func() {

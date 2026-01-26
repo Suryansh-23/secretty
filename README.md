@@ -40,15 +40,17 @@ Binary output: `bin/secretty`
 ./bin/secretty init
 ./bin/secretty reset
 ./bin/secretty copy last
+./bin/secretty status
 ./bin/secretty doctor
 ```
+`secretty status` prints whether the current shell is wrapped (`SECRETTY_WRAPPED=1`) and whether IPC is available.
 
 ## Onboarding
 ```
 ./bin/secretty init
 ```
 The wizard shows an animated logo header and guides the user through mode, ruleset, and clipboard settings before writing `~/.config/secretty/config.yaml`.
-It now also includes redaction style selection, multi-select rulesets, and optional shell hook installation.
+It now also includes redaction style selection, multi-select rulesets, and optional shell auto-wrap hook installation.
 
 ## Configuration
 Default path:
@@ -180,6 +182,7 @@ make smoke
 ./bin/secretty reset
 ```
 This removes the config file and deletes any SecreTTY marker blocks from common shell rc files. Manual aliases or custom edits must be removed manually.
+If you enabled shell auto-wrap, this removes the auto-wrap blocks as well.
 
 ## Limitations
 - macOS-only MVP.

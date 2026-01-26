@@ -70,3 +70,19 @@ func TestStreamNoBufferPreservesUTF8(t *testing.T) {
 		t.Fatalf("output = %q", out.String())
 	}
 }
+
+func TestStreamInteractivePreservesControlBytes(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Redaction.RollingWindowBytes = 0
+	var out bytes.Buffer
+
+	stream := NewStream(&out, cfg, matchDetector{}, nil, nil)
+	input := []byte("ab\x08c")
+	_, err := stream.Write(input)
+	if err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	if out.String() != string(input) {
+		t.Fatalf("output = %q", out.String())
+	}
+}

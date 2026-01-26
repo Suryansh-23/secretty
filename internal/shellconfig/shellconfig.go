@@ -105,15 +105,19 @@ func blockForShell(kind, configPath string) ([]string, error) {
 	case "zsh", "bash", "sh":
 		return []string{
 			beginMarker,
-			fmt.Sprintf("export SECRETTY_CONFIG=\"%s\"", configPath),
-			"alias safe='secretty'",
+			"if [[ -o interactive ]] && [[ -z \"$SECRETTY_WRAPPED\" ]]; then",
+			fmt.Sprintf("  export SECRETTY_CONFIG=\"%s\"", configPath),
+			"  exec secretty",
+			"fi",
 			endMarker,
 		}, nil
 	case "fish":
 		return []string{
 			beginMarker,
-			fmt.Sprintf("set -gx SECRETTY_CONFIG \"%s\"", configPath),
-			"alias safe \"secretty\"",
+			"if status --is-interactive; and not set -q SECRETTY_WRAPPED",
+			fmt.Sprintf("  set -gx SECRETTY_CONFIG \"%s\"", configPath),
+			"  exec secretty",
+			"end",
 			endMarker,
 		}, nil
 	default:

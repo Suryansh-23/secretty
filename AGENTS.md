@@ -81,3 +81,8 @@
 - 2026-01-24: Added `secretty reset` command to remove config and SecreTTY-marked shell blocks, plus shellconfig helper/tests and README updates. Lint/test/build/smoke run succeeded.
 - 2026-01-24: Fixed UTF-8 boundary handling in streaming redaction (prevents icon glyph corruption) and added tests. Lint/test/build/smoke run succeeded.
 - 2026-01-24: Config path now defaults to `~/.config/secretty/config.yaml` with `SECRETTY_CONFIG` overrides, onboarding can install shell hooks for detected shells, and child shells inherit `SECRETTY_CONFIG`. Lint/test/build/smoke run succeeded.
+- 2026-01-24: Shell hooks now auto-wrap shells by default (no alias), added `SECRETTY_WRAPPED` env + `secretty status` command. Lint/test/build/smoke run succeeded.
+- 2026-01-24: Interactive stream now preserves control bytes to keep line editing keys working; added tests. Lint/test/build/smoke run succeeded.
+- 2026-01-24: PTY slave is now put into raw mode for interactive runs to stabilize key handling. Lint/test/build/smoke run succeeded.
+- 2026-01-24: Reverted PTY slave raw mode; interactive runs now use standard pty.Start to restore job control and key handling. Lint/test/build/smoke run succeeded.
+- 2026-01-24: Reworked PTY wrapper to open PTYs directly, inherit terminal settings onto the slave, keep local raw mode with signals, and forward more signals (SIGQUIT/SIGTSTP). Lint/test/build/smoke run succeeded.

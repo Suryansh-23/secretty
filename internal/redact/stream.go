@@ -124,18 +124,9 @@ func (s *Stream) processText(text []byte) error {
 			s.buffer = tail
 			return nil
 		}
-		matches := s.detector.Find(emitBuf)
-		matches = s.assignIDs(matches)
-		s.storeMatches(emitBuf, matches)
-		redacted, err := s.redactor.Apply(emitBuf, matches)
-		if err != nil {
+		if err := s.writeInteractive(emitBuf); err != nil {
 			return err
 		}
-		if _, err := s.out.Write(redacted); err != nil {
-			return err
-		}
-		s.logMatches(matches)
-		s.maybeEmitStatus(matches, redacted)
 		s.buffer = tail
 		return nil
 	}
@@ -169,6 +160,35 @@ func (s *Stream) processText(text []byte) error {
 	s.logMatches(emitMatches)
 	s.maybeEmitStatus(emitMatches, redacted)
 	s.buffer = append([]byte(nil), keepBuf...)
+	return nil
+}
+
+type textRun struct {
+	control bool
+	bytes   []byte
+}
+
+func (s *Stream) writeInteractive(buf []byte) error {
+	for _, run := range splitControlRuns(buf) {
+		if run.control {
+			if _, err := s.out.Write(run.bytes); err != nil {
+				return err
+			}
+			continue
+		}
+		matches := s.detector.Find(run.bytes)
+		matches = s.assignIDs(matches)
+		s.storeMatches(run.bytes, matches)
+		redacted, err := s.redactor.Apply(run.bytes, matches)
+		if err != nil {
+			return err
+		}
+		if _, err := s.out.Write(redacted); err != nil {
+			return err
+		}
+		s.logMatches(matches)
+		s.maybeEmitStatus(matches, redacted)
+	}
 	return nil
 }
 
@@ -220,6 +240,33 @@ func utf8SafePrefixLen(buf []byte, max int) int {
 	}
 	head, _ := splitUTF8Tail(buf[:max])
 	return len(head)
+}
+
+func splitControlRuns(buf []byte) []textRun {
+	if len(buf) == 0 {
+		return nil
+	}
+	var runs []textRun
+	start := 0
+	currControl := isControlByte(buf[0])
+	for i := 1; i < len(buf); i++ {
+		nextControl := isControlByte(buf[i])
+		if nextControl == currControl {
+			continue
+		}
+		runs = append(runs, textRun{control: currControl, bytes: buf[start:i]})
+		start = i
+		currControl = nextControl
+	}
+	runs = append(runs, textRun{control: currControl, bytes: buf[start:]})
+	return runs
+}
+
+func isControlByte(b byte) bool {
+	if b == '\n' || b == '\t' {
+		return false
+	}
+	return b < 0x20 || b == 0x7f
 }
 
 func filterMatches(matches []Match, emitLen int) []Match {
