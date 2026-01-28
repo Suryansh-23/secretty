@@ -12,7 +12,8 @@ This roadmap expands the MVP spec into staged, feature-based implementation work
 7) 06-overrides-clipboard-cache.md - secret cache, copy-without-render, strict policy
 8) 07-statusline-debug-doctor.md - status line, sanitized debug logs, doctor
 9) 08-tests-packaging-release.md - fixtures, smoke tests, CI, packaging
-10) 90-nice-to-have.md - non-MVP enhancements and future roadmap
+10) 09-pty-interactive-wrap.md - PTY interactive shell reliability
+11) 90-nice-to-have.md - non-MVP enhancements and future roadmap
 
 ## Delivery principles
 - Preserve PTY semantics and ANSI correctness above all.
