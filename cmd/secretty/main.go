@@ -691,7 +691,7 @@ func runWithPTY(ctx context.Context, cfg config.Config, cfgPath string, command 
 	}
 	detector := detect.NewEngine(cfg)
 	stream := redact.NewStream(os.Stdout, cfg, detector, cache, logger)
-	exitCode, err := ptywrap.RunCommand(ctx, command, ptywrap.Options{RawMode: true, Output: stream})
+	exitCode, err := ptywrap.RunCommand(ctx, command, ptywrap.Options{RawMode: true, Output: stream, Logger: logger})
 	if err != nil {
 		return err
 	}

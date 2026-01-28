@@ -11,6 +11,7 @@ import (
 	"syscall"
 
 	"github.com/creack/pty"
+	"github.com/suryansh-23/secretty/internal/debug"
 	"golang.org/x/sys/unix"
 	"golang.org/x/term"
 )
@@ -19,33 +20,28 @@ import (
 type Options struct {
 	RawMode bool
 	Output  io.Writer
+	Logger  *debug.Logger
 }
 
 // RunCommand starts cmd under a PTY and proxies IO.
 func RunCommand(ctx context.Context, cmd *exec.Cmd, opts Options) (int, error) {
-	ptmx, tty, err := pty.Open()
-	if err != nil {
-		return 1, fmt.Errorf("open pty: %w", err)
-	}
-	defer func() { _ = ptmx.Close() }()
-
-	if err := inheritTermios(tty); err != nil {
-		_ = tty.Close()
-		return 1, err
-	}
-	prepareCommand(cmd, tty)
-	if err := cmd.Start(); err != nil {
-		_ = tty.Close()
-		return 1, fmt.Errorf("start pty command: %w", err)
-	}
-	_ = tty.Close()
-
 	out := opts.Output
 	if out == nil {
 		out = os.Stdout
 	}
+	stdinFD := int(os.Stdin.Fd())
+	isTTY := term.IsTerminal(stdinFD)
+	if opts.Logger != nil {
+		opts.Logger.Infof("ptywrap: stdin_is_tty=%t", isTTY)
+	}
 
-	restore, err := maybeMakeRaw(opts.RawMode)
+	ptmx, err := startWithPTY(cmd, isTTY, opts.Logger)
+	if err != nil {
+		return 1, err
+	}
+	defer func() { _ = ptmx.Close() }()
+
+	restore, err := maybeMakeRaw(opts.RawMode && isTTY)
 	if err != nil {
 		return 1, err
 	}
@@ -53,8 +49,11 @@ func RunCommand(ctx context.Context, cmd *exec.Cmd, opts Options) (int, error) {
 		defer restore()
 	}
 
-	_ = pty.InheritSize(os.Stdin, ptmx)
-	stopSignals := forwardSignals(cmd.Process, ptmx)
+	if isTTY {
+		_ = pty.InheritSize(os.Stdin, ptmx)
+		setForegroundProcessGroup(ptmx, cmd.Process, opts.Logger)
+	}
+	stopSignals := forwardSignals(cmd.Process, ptmx, isTTY)
 	defer stopSignals()
 
 	ctx, cancel := context.WithCancel(ctx)
@@ -74,6 +73,40 @@ func RunCommand(ctx context.Context, cmd *exec.Cmd, opts Options) (int, error) {
 		return 0, nil
 	}
 	return exitCode(waitErr), nil
+}
+
+func startWithPTY(cmd *exec.Cmd, isTTY bool, logger *debug.Logger) (*os.File, error) {
+	if isTTY {
+		winsize := hostWinsize(int(os.Stdin.Fd()), logger)
+		ptmx, err := pty.StartWithSize(cmd, winsize)
+		if err != nil {
+			return nil, fmt.Errorf("start pty command: %w", err)
+		}
+		return ptmx, nil
+	}
+	attrs := &syscall.SysProcAttr{Setsid: true, Setctty: false}
+	ptmx, err := pty.StartWithAttrs(cmd, nil, attrs)
+	if err != nil {
+		return nil, fmt.Errorf("start pty command: %w", err)
+	}
+	return ptmx, nil
+}
+
+func hostWinsize(fd int, logger *debug.Logger) *pty.Winsize {
+	if fd < 0 || !term.IsTerminal(fd) {
+		return nil
+	}
+	cols, rows, err := term.GetSize(fd)
+	if err != nil || cols <= 0 || rows <= 0 {
+		if logger != nil {
+			logger.Infof("ptywrap: winsize_unavailable=%v", err)
+		}
+		return nil
+	}
+	if logger != nil {
+		logger.Infof("ptywrap: winsize=%dx%d", cols, rows)
+	}
+	return &pty.Winsize{Rows: uint16(rows), Cols: uint16(cols)}
 }
 
 func copyWithContext(ctx context.Context, dst io.Writer, src io.Reader, errCh chan<- error) {
@@ -142,41 +175,7 @@ func setTermios(fd int, termios *unix.Termios) error {
 	return unix.IoctlSetTermios(fd, unix.TIOCSETA, termios)
 }
 
-func inheritTermios(tty *os.File) error {
-	if tty == nil {
-		return nil
-	}
-	if !term.IsTerminal(int(os.Stdin.Fd())) {
-		return nil
-	}
-	termios, err := getTermios(int(os.Stdin.Fd()))
-	if err != nil {
-		return fmt.Errorf("get terminal settings: %w", err)
-	}
-	if termios == nil {
-		return nil
-	}
-	if err := setTermios(int(tty.Fd()), termios); err != nil {
-		return fmt.Errorf("set pty terminal settings: %w", err)
-	}
-	return nil
-}
-
-func prepareCommand(cmd *exec.Cmd, tty *os.File) {
-	cmd.Stdin = tty
-	cmd.Stdout = tty
-	cmd.Stderr = tty
-	if cmd.SysProcAttr == nil {
-		cmd.SysProcAttr = &syscall.SysProcAttr{}
-	}
-	cmd.SysProcAttr.Setsid = true
-	cmd.SysProcAttr.Setctty = true
-	if tty != nil {
-		cmd.SysProcAttr.Ctty = 0
-	}
-}
-
-func forwardSignals(proc *os.Process, ptmx *os.File) func() {
+func forwardSignals(proc *os.Process, ptmx *os.File, resize bool) func() {
 	if proc == nil {
 		return func() {}
 	}
@@ -189,8 +188,10 @@ func forwardSignals(proc *os.Process, ptmx *os.File) func() {
 		for sig := range ch {
 			switch sig {
 			case syscall.SIGWINCH:
-				// Best-effort resize; ignore errors.
-				_ = pty.InheritSize(os.Stdin, ptmx)
+				if resize {
+					// Best-effort resize; ignore errors.
+					_ = pty.InheritSize(os.Stdin, ptmx)
+				}
 			default:
 				_ = proc.Signal(sig)
 			}
@@ -201,6 +202,24 @@ func forwardSignals(proc *os.Process, ptmx *os.File) func() {
 		signal.Stop(ch)
 		close(ch)
 		<-done
+	}
+}
+
+func setForegroundProcessGroup(ptmx *os.File, proc *os.Process, logger *debug.Logger) {
+	if ptmx == nil || proc == nil {
+		return
+	}
+	pgid, err := syscall.Getpgid(proc.Pid)
+	if err != nil {
+		if logger != nil {
+			logger.Infof("ptywrap: getpgid_failed=%v", err)
+		}
+		return
+	}
+	if err := unix.IoctlSetInt(int(ptmx.Fd()), unix.TIOCSPGRP, pgid); err != nil {
+		if logger != nil {
+			logger.Infof("ptywrap: set_fg_pgrp_failed=%v", err)
+		}
 	}
 }
 
