@@ -7,7 +7,7 @@ SecreTTY is a macOS-only PTY wrapper that redacts secrets from terminal output b
 - Redact secrets in terminal output before display.
 - Preserve PTY semantics and ANSI correctness (colors, cursor motion, alt-screen, TUIs).
 - Terminal emulator agnostic (acts as a PTY proxy).
-- Always-on demo mode by default.
+- Always-on strict recording mode by default.
 - Local-only operation; no network calls or telemetry.
 - Minimal UX: zero-config default path that still protects users.
 

@@ -171,7 +171,9 @@ func prepareCommand(cmd *exec.Cmd, tty *os.File) {
 	}
 	cmd.SysProcAttr.Setsid = true
 	cmd.SysProcAttr.Setctty = true
-	cmd.SysProcAttr.Ctty = 0
+	if tty != nil {
+		cmd.SysProcAttr.Ctty = 0
+	}
 }
 
 func forwardSignals(proc *os.Process, ptmx *os.File) func() {

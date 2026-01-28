@@ -29,8 +29,8 @@ func TestParseCanonicalConfig(t *testing.T) {
 	if cfg.Version != DefaultConfigVersion {
 		t.Fatalf("version = %d, want %d", cfg.Version, DefaultConfigVersion)
 	}
-	if cfg.Mode != types.ModeDemo {
-		t.Fatalf("mode = %q, want %q", cfg.Mode, types.ModeDemo)
+	if cfg.Mode != types.ModeStrict {
+		t.Fatalf("mode = %q, want %q", cfg.Mode, types.ModeStrict)
 	}
 	if cfg.Redaction.RollingWindowBytes != 32768 {
 		t.Fatalf("rolling_window_bytes = %d", cfg.Redaction.RollingWindowBytes)
@@ -55,7 +55,7 @@ func TestValidationRejectsUnknownMode(t *testing.T) {
 }
 
 func TestParseAppliesDefaults(t *testing.T) {
-	data := []byte("version: 1\nmode: demo\n")
+	data := []byte("version: 1\nmode: strict\n")
 	cfg, err := Parse(data)
 	if err != nil {
 		t.Fatalf("parse minimal config: %v", err)
@@ -66,7 +66,7 @@ func TestParseAppliesDefaults(t *testing.T) {
 	if cfg.Masking.BlockChar != defaultBlockChar {
 		t.Fatalf("block_char not default")
 	}
-	if cfg.Masking.Style != types.MaskStyleBlock {
+	if cfg.Masking.Style != types.MaskStyleGlow {
 		t.Fatalf("masking.style not default")
 	}
 }

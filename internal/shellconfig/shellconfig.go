@@ -106,8 +106,10 @@ func blockForShell(kind, configPath string) ([]string, error) {
 		return []string{
 			beginMarker,
 			"if [[ -o interactive ]] && [[ -z \"$SECRETTY_WRAPPED\" ]]; then",
-			fmt.Sprintf("  export SECRETTY_CONFIG=\"%s\"", configPath),
-			"  exec secretty",
+			"  if command -v secretty >/dev/null 2>&1; then",
+			fmt.Sprintf("    export SECRETTY_CONFIG=\"%s\"", configPath),
+			"    secretty || echo \"secretty: failed to start; continuing without wrapper\" >&2",
+			"  fi",
 			"fi",
 			endMarker,
 		}, nil
@@ -115,8 +117,10 @@ func blockForShell(kind, configPath string) ([]string, error) {
 		return []string{
 			beginMarker,
 			"if status --is-interactive; and not set -q SECRETTY_WRAPPED",
-			fmt.Sprintf("  set -gx SECRETTY_CONFIG \"%s\"", configPath),
-			"  exec secretty",
+			"  if type -q secretty",
+			fmt.Sprintf("    set -gx SECRETTY_CONFIG \"%s\"", configPath),
+			"    secretty; or echo \"secretty: failed to start; continuing without wrapper\" >&2",
+			"  end",
 			"end",
 			endMarker,
 		}, nil

@@ -32,6 +32,7 @@ func TestPlaceholderReplacement(t *testing.T) {
 
 func TestHexRandomMaskKeepsPrefix(t *testing.T) {
 	cfg := config.DefaultConfig()
+	cfg.Masking.Style = types.MaskStyleBlock
 	r := NewRedactor(cfg)
 	r.rng = bytes.NewReader(bytes.Repeat([]byte{0x01}, 128))
 

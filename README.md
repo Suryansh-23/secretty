@@ -51,6 +51,7 @@ Binary output: `bin/secretty`
 ```
 The wizard shows an animated logo header and guides the user through mode, ruleset, and clipboard settings before writing `~/.config/secretty/config.yaml`.
 It now also includes redaction style selection, multi-select rulesets, and optional shell auto-wrap hook installation.
+Use `./bin/secretty init --default` to write the default config without prompts.
 
 ## Configuration
 Default path:
@@ -63,7 +64,7 @@ Example config (ASCII placeholder form):
 ```yaml
 version: 1
 
-mode: demo
+mode: strict
 strict:
   no_reveal: true
   lock_until_exit: false
@@ -79,7 +80,7 @@ redaction:
     rate_limit_ms: 2000
 
 masking:
-  style: block
+  style: glow
   block_char: "*"
   hex_random_same_length:
     uppercase: false

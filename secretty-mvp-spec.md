@@ -12,7 +12,7 @@
 2) **Preserve TTY semantics** (colors, cursor motion, REPLs, full-screen TUIs) by running the child under a PTY. The `creack/pty` `Start` helper assigns a tty to stdin/stdout/stderr and starts the process in a new session with a controlling terminal. citeturn0search0turn0search16  
 3) Be **terminal-emulator agnostic**: works with Ghostty/iTerm2/WezTerm/kitty/Terminal.app (since SecreTTY sits between the terminal and the child process).  
 4) **macOS-only** for MVP.  
-5) **Always-on “Demo mode”** inside SecreTTY sessions (redaction enabled by default).  
+5) **Always-on “Strict recording” mode** inside SecreTTY sessions (redaction enabled by default).  
 6) **Local-only**: no network calls; no telemetry.  
 7) **Simple UX**: minimal commands; zero configuration required to get value.
 
@@ -84,6 +84,7 @@ SecreTTY’s differentiator: **works with any terminal** (PTY wrapper), and focu
 
 #### `secretty init`
 - First-run wizard (creates config, enables Web3 ruleset, runs self-test). Built with `huh?` forms. citeturn0search1turn0search21  
+- `secretty init --default` writes the default config without prompts.
 
 #### `secretty copy last` (MVP)
 - Copies the last redacted secret’s **original value** to clipboard **without printing it**.
@@ -139,7 +140,7 @@ SecreTTY’s differentiator: **works with any terminal** (PTY wrapper), and focu
 - **PLACEHOLDER** (replace span with template)
 
 ### 6.2 Mask strategies (enum)
-**Default for MVP:** `hex_random_same_length` for hex-like secrets, else `block`.
+**Default for MVP:** `hex_random_same_length` for hex-like secrets, else `block` (glow style by default).
 
 #### Strategy options
 1) `block`  
@@ -268,7 +269,7 @@ Default: `~/.config/secretty/config.yaml`
 ```yaml
 version: 1
 
-mode: demo            # demo | strict | warn
+ mode: strict          # demo | strict | warn
 strict:
   no_reveal: true
   lock_until_exit: false
@@ -284,6 +285,7 @@ redaction:
     rate_limit_ms: 2000
 
 masking:
+  style: glow
   block_char: "█"
   hex_random_same_length:
     uppercase: false
@@ -342,7 +344,7 @@ Implemented using `huh?` prompts (terminal forms). citeturn0search1turn
 1) Detect environment:
    - shell (`$SHELL`), TERM, tmux, terminal size
 2) Choose mode:
-   - Demo (default) / Strict recording / Warn-only
+   - Strict recording (default) / Demo / Warn-only
 3) Enable Web3 ruleset (default ON)
 4) Self-test:
    - prints sample `0x` + 64 hex and shows redaction

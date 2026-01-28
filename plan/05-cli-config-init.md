@@ -20,11 +20,12 @@
 
 ## Init wizard flow (huh forms)
 1) Detect environment: shell (`$SHELL`), TERM, tmux presence, terminal size.
-2) Choose mode: demo / strict / warn.
+2) Choose mode: strict / demo / warn (default strict).
 3) Enable web3 ruleset (default ON).
 4) Self-test: prints synthetic `0x` + 64 hex string; ensure redaction.
 5) Suggest alias: `alias safe=secretty`.
 6) Configure copy-without-render and TTL.
+- Optional: `secretty init --default` to accept defaults without prompts.
 
 ## Self-test constraints
 - Never use real keys.

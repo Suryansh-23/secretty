@@ -163,7 +163,8 @@ func newRunCmd(state *appState) *cobra.Command {
 }
 
 func newInitCmd(cfgPath *string) *cobra.Command {
-	return &cobra.Command{
+	var useDefaults bool
+	cmd := &cobra.Command{
 		Use:   "init",
 		Short: "Run the first-time setup wizard",
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -173,6 +174,27 @@ func newInitCmd(cfgPath *string) *cobra.Command {
 			}
 
 			cfg := config.DefaultConfig()
+			if useDefaults {
+				if exists(path) {
+					fmt.Printf("Config exists, overwriting: %s\n", path)
+				}
+				shellOptions := detectShellOptions()
+				selectedShells := defaultShellSelections(shellOptions)
+				if err := runSelfTest(cfg); err != nil {
+					return err
+				}
+				fmt.Println("Suggested alias: alias safe=secretty")
+				if err := config.Write(path, cfg); err != nil {
+					return err
+				}
+				fmt.Printf("Wrote config to %s\n", path)
+				if len(selectedShells) > 0 {
+					if err := installShellHooks(selectedShells, shellOptions, path); err != nil {
+						return err
+					}
+				}
+				return nil
+			}
 			mode := string(cfg.Mode)
 			maskStyle := string(cfg.Masking.Style)
 			selectedRulesets := defaultRulesetSelections(cfg)
@@ -195,15 +217,15 @@ func newInitCmd(cfgPath *string) *cobra.Command {
 				).WithHideFunc(func() bool { return !exists(path) }),
 				huh.NewGroup(
 					huh.NewSelect[string]().Title("Choose mode").Value(&mode).Options(
-						huh.NewOption("Demo (default)", string(types.ModeDemo)),
-						huh.NewOption("Strict recording", string(types.ModeStrict)),
+						huh.NewOption("Strict recording (default)", string(types.ModeStrict)),
+						huh.NewOption("Demo", string(types.ModeDemo)),
 						huh.NewOption("Warn-only", string(types.ModeWarn)),
 					),
 				),
 				huh.NewGroup(
 					huh.NewSelect[string]().Title("Redaction style").Value(&maskStyle).Options(
 						huh.NewOption("Classic blocks", string(types.MaskStyleBlock)),
-						huh.NewOption("Glow blocks", string(types.MaskStyleGlow)),
+						huh.NewOption("Glow blocks (default)", string(types.MaskStyleGlow)),
 						huh.NewOption("Morse code", string(types.MaskStyleMorse)),
 					),
 				),
@@ -277,6 +299,8 @@ func newInitCmd(cfgPath *string) *cobra.Command {
 			return nil
 		},
 	}
+	cmd.Flags().BoolVar(&useDefaults, "default", false, "write default config without prompts")
+	return cmd
 }
 
 func newResetCmd(cfgPath *string) *cobra.Command {

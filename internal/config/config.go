@@ -156,7 +156,7 @@ type TypedDetector struct {
 func DefaultConfig() Config {
 	return Config{
 		Version: DefaultConfigVersion,
-		Mode:    types.ModeDemo,
+		Mode:    types.ModeStrict,
 		Strict: Strict{
 			NoReveal:            true,
 			LockUntilExit:       false,
@@ -173,7 +173,7 @@ func DefaultConfig() Config {
 			},
 		},
 		Masking: Masking{
-			Style:     types.MaskStyleBlock,
+			Style:     types.MaskStyleGlow,
 			BlockChar: defaultBlockChar,
 			HexRandomSameLength: struct {
 				Uppercase bool `yaml:"uppercase"`

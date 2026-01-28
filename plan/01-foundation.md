@@ -40,7 +40,7 @@ Note: The spec uses non-ASCII glyphs for placeholders and block masking. Keep th
 ```yaml
 version: 1
 
-mode: demo            # demo | strict | warn
+mode: strict          # demo | strict | warn
 strict:
   no_reveal: true
   lock_until_exit: false
@@ -56,6 +56,7 @@ redaction:
     rate_limit_ms: 2000
 
 masking:
+  style: glow
   block_char: "U+2588" # full block in actual default
   hex_random_same_length:
     uppercase: false

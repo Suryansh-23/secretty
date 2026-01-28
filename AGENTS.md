@@ -1,35 +1,52 @@
 # AGENTS.md
 
 ## Overview
-- This repo currently contains a product/technical spec for **SecreTTY**, a macOS-only PTY wrapper that redacts secrets from terminal output during screen-share/demo use.
-- Initial Go scaffolding now exists; the authoritative requirements source is still `secretty-mvp-spec.md`.
+- This repo contains the product/technical spec for **SecreTTY**, a macOS-only PTY wrapper that redacts secrets from terminal output during screen-share/demo use.
+- The Go implementation covers the MVP flows (PTY wrapper, redaction pipeline, detectors, init wizard, clipboard copy, status line); the authoritative requirements source is still `secretty-mvp-spec.md`.
 
 ## Key files
 - `secretty-mvp-spec.md`: Full MVP product/technical specification (CLI contract, redaction pipeline, config schema, architecture).
 - `README.md`: Usage, configuration, and development guide.
+- `plan/`: Stage-by-stage roadmap aligned to the spec.
 - `LICENSE`: MIT.
 - `.gitignore`: Go-oriented ignores.
 - `.golangci.yml`: Lint configuration.
 - `.github/workflows/ci.yml`: macOS CI for tests/vet.
+- `packaging/homebrew/secretty.rb`: Homebrew formula template (SHA placeholder).
+- `scripts/smoke.sh`: Minimal smoke run that asserts redaction.
+
+## Key directories
+- `cmd/secretty`: Cobra CLI entrypoint and wizard animation.
+- `internal/ansi`: Streaming ANSI tokenizer.
+- `internal/cache`: In-memory secret cache (LRU + TTL).
+- `internal/clipboard`: `pbcopy` integration.
+- `internal/config`: YAML schema/defaults/validation/write helpers.
+- `internal/debug`: Sanitized logger.
+- `internal/detect`: Regex + typed detector engine with overlap resolution.
+- `internal/ipc`: Unix socket IPC for copy-last across sessions.
+- `internal/ptywrap`: PTY spawn and signal/resize forwarding.
+- `internal/redact`: Redaction stream and masking strategies.
+- `internal/shellconfig`: Shell hook install/remove helpers.
+- `internal/ui`: Status line, palette, logo, and wizard theme.
 
 ## Entry points
-- `cmd/secretty/main.go`: Cobra-based CLI skeleton with placeholder subcommands.
+- `cmd/secretty/main.go`: Cobra CLI wiring for shell/run/init/reset/copy/status/doctor.
+- `cmd/secretty/wizard.go`: Bubble Tea animated wrapper for the init wizard.
 
 ## Setup
 - Go module initialized (`go.mod`) with Cobra, YAML parsing, and Charm Huh (init wizard).
+- Requires Go 1.24+ (tested with Go 1.25).
 - Default config path remains `~/.config/secretty/config.yaml` when built.
 
 ## Run
-- CLI compiles; `secretty`, `secretty shell`, and `secretty run` execute under a PTY.
-- Other subcommands remain placeholders.
-- Intended usage remains:
-  - `secretty` (interactive shell under PTY)
-  - `secretty run -- <cmd...>`
+- CLI compiles; `secretty` and `secretty shell`/`run` execute under a PTY.
+- Commands implemented: `secretty`, `secretty shell -- <shell>`, `secretty run -- <cmd...>`, `secretty init`, `secretty reset`, `secretty copy last`, `secretty status`, `secretty doctor`.
+- Global flags: `--config`, `--strict`, `--debug`, `--no-init-hints`.
 
 ## Lint / Format / Test
 - `Makefile` provides `build`, `test`, `lint`, `fmt` targets.
 - Config unit tests live under `internal/config`.
-- `scripts/smoke.sh` provides a minimal smoke run.
+- `scripts/smoke.sh` provides a minimal smoke run (uses `python3` to generate a key).
 
 ## Build / Deploy
 - Local build is `make build` (outputs `bin/secretty`).
@@ -38,11 +55,14 @@
 ## Data and schema
 - YAML config schema implemented in `internal/config` with defaults and validation.
 - Config write helper is implemented in `internal/config`.
+- Default config uses non-ASCII placeholders (U+27E6/U+27E7) and block char (U+2588); ASCII examples live in `README.md`.
+- Config path resolution order: `--config`, `SECRETTY_CONFIG`, default path.
 - In-memory secret cache implemented in `internal/cache` with TTL + LRU; no persistent storage planned.
 
 ## Redaction pipeline
 - Streaming ANSI tokenizer and redaction pipeline are present under `internal/ansi` and `internal/redact`.
 - Detection engine is implemented under `internal/detect` with regex rules and an EVM private key typed detector.
+- Interactive shells set `rolling_window_bytes=0` to preserve line editing; stream preserves control bytes for key handling.
 - Status line formatting lives in `internal/ui` and is emitted only when not in alt-screen and rate-limited.
 
 ## TUI design system
@@ -53,11 +73,14 @@
 
 ## Integrations
 - macOS clipboard integration via `pbcopy` implemented in `internal/clipboard`.
+- IPC socket (`SECRETTY_SOCKET`) used to support `copy last` across wrapped shells.
+- Shell hook installation/removal (auto-wrap) lives in `internal/shellconfig`.
 - No external services or network calls; spec requires local-only behavior.
 
 ## Conventions
 - Security invariants in spec: never print/log originals, do not mutate ANSI escape sequences, handle chunk boundaries, strict mode policy.
 - Streaming redaction pipeline with ANSI-aware tokenizer.
+- `SECRETTY_WRAPPED` and `SECRETTY_CONFIG` are propagated into child shells; `SECRETTY_SOCKET` advertises IPC cache.
 
 ## Gotchas
 - Spec requires PTY semantics (not a simple pipe) and ANSI-safe redaction.
