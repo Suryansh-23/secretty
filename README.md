@@ -52,6 +52,7 @@ Binary output: `bin/secretty`
 The wizard shows an animated logo header and guides the user through mode, ruleset, and clipboard settings before writing `~/.config/secretty/config.yaml`.
 It now also includes redaction style selection, multi-select rulesets, and optional shell auto-wrap hook installation.
 Use `./bin/secretty init --default` to write the default config without prompts.
+Set `SECRETTY_AUTOEXEC=1` to have the shell hook replace the shell via `exec` when auto-wrap is installed.
 
 ## Configuration
 Default path:

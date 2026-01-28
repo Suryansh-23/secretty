@@ -105,10 +105,14 @@ func blockForShell(kind, configPath string) ([]string, error) {
 	case "zsh", "bash", "sh":
 		return []string{
 			beginMarker,
-			"if [[ -o interactive ]] && [[ -z \"$SECRETTY_WRAPPED\" ]]; then",
+			"if [[ -o interactive ]] && [[ -t 0 ]] && [[ -z \"$SECRETTY_WRAPPED\" ]]; then",
 			"  if command -v secretty >/dev/null 2>&1; then",
 			fmt.Sprintf("    export SECRETTY_CONFIG=\"%s\"", configPath),
-			"    secretty || echo \"secretty: failed to start; continuing without wrapper\" >&2",
+			"    if [[ -n \"$SECRETTY_AUTOEXEC\" ]]; then",
+			"      exec secretty",
+			"    else",
+			"      secretty || echo \"secretty: failed to start; continuing without wrapper\" >&2",
+			"    fi",
 			"  fi",
 			"fi",
 			endMarker,
@@ -116,10 +120,14 @@ func blockForShell(kind, configPath string) ([]string, error) {
 	case "fish":
 		return []string{
 			beginMarker,
-			"if status --is-interactive; and not set -q SECRETTY_WRAPPED",
+			"if status --is-interactive; and test -t 0; and not set -q SECRETTY_WRAPPED",
 			"  if type -q secretty",
 			fmt.Sprintf("    set -gx SECRETTY_CONFIG \"%s\"", configPath),
-			"    secretty; or echo \"secretty: failed to start; continuing without wrapper\" >&2",
+			"    if set -q SECRETTY_AUTOEXEC",
+			"      exec secretty",
+			"    else",
+			"      secretty; or echo \"secretty: failed to start; continuing without wrapper\" >&2",
+			"    end",
 			"  end",
 			"end",
 			endMarker,

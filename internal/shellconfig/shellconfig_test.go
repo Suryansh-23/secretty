@@ -59,6 +59,12 @@ func TestInstallBlock(t *testing.T) {
 	if !strings.Contains(string(data), "command -v secretty") {
 		t.Fatalf("expected command existence check")
 	}
+	if !strings.Contains(string(data), "SECRETTY_AUTOEXEC") {
+		t.Fatalf("expected autoexec toggle")
+	}
+	if !strings.Contains(string(data), "exec secretty") {
+		t.Fatalf("expected exec wrapper")
+	}
 	if !strings.Contains(string(data), "secretty || echo") {
 		t.Fatalf("expected non-fatal wrapper")
 	}
