@@ -8,6 +8,8 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
+	"path/filepath"
+	"strings"
 	"syscall"
 
 	"github.com/creack/pty"
@@ -34,6 +36,7 @@ func RunCommand(ctx context.Context, cmd *exec.Cmd, opts Options) (int, error) {
 	if opts.Logger != nil {
 		opts.Logger.Infof("ptywrap: stdin_is_tty=%t", isTTY)
 	}
+	ensureTermFallback(cmd, opts.Logger)
 
 	ptmx, err := startWithPTY(cmd, isTTY, opts.Logger)
 	if err != nil {
@@ -76,17 +79,38 @@ func RunCommand(ctx context.Context, cmd *exec.Cmd, opts Options) (int, error) {
 }
 
 func startWithPTY(cmd *exec.Cmd, isTTY bool, logger *debug.Logger) (*os.File, error) {
-	if isTTY {
-		winsize := hostWinsize(int(os.Stdin.Fd()), logger)
-		ptmx, err := pty.StartWithSize(cmd, winsize)
-		if err != nil {
-			return nil, fmt.Errorf("start pty command: %w", err)
-		}
-		return ptmx, nil
-	}
-	attrs := &syscall.SysProcAttr{Setsid: true, Setctty: false}
-	ptmx, err := pty.StartWithAttrs(cmd, nil, attrs)
+	ptmx, tty, err := pty.Open()
 	if err != nil {
+		return nil, fmt.Errorf("open pty: %w", err)
+	}
+	defer func() {
+		_ = tty.Close()
+	}()
+
+	if isTTY {
+		if err := inheritTermios(tty); err != nil {
+			_ = ptmx.Close()
+			return nil, err
+		}
+	}
+	if winsize := hostWinsize(int(os.Stdin.Fd()), logger); winsize != nil {
+		if err := pty.Setsize(ptmx, winsize); err != nil {
+			_ = ptmx.Close()
+			return nil, fmt.Errorf("set pty size: %w", err)
+		}
+	}
+
+	cmd.Stdin = tty
+	cmd.Stdout = tty
+	cmd.Stderr = tty
+	if cmd.SysProcAttr == nil {
+		cmd.SysProcAttr = &syscall.SysProcAttr{}
+	}
+	cmd.SysProcAttr.Setsid = true
+	cmd.SysProcAttr.Setctty = isTTY
+	cmd.SysProcAttr.Ctty = 0
+	if err := cmd.Start(); err != nil {
+		_ = ptmx.Close()
 		return nil, fmt.Errorf("start pty command: %w", err)
 	}
 	return ptmx, nil
@@ -107,6 +131,92 @@ func hostWinsize(fd int, logger *debug.Logger) *pty.Winsize {
 		logger.Infof("ptywrap: winsize=%dx%d", cols, rows)
 	}
 	return &pty.Winsize{Rows: uint16(rows), Cols: uint16(cols)}
+}
+
+func ensureTermFallback(cmd *exec.Cmd, logger *debug.Logger) {
+	if cmd == nil {
+		return
+	}
+	if cmd.Env == nil {
+		cmd.Env = os.Environ()
+	}
+	term := envValue(cmd.Env, "TERM")
+	if term == "" || terminfoExists(term, cmd.Env) {
+		return
+	}
+	fallback := "xterm-256color"
+	if term == fallback {
+		return
+	}
+	cmd.Env = setEnv(cmd.Env, "TERM", fallback)
+	if logger != nil {
+		logger.Infof("ptywrap: term_fallback=%s", fallback)
+	}
+}
+
+func terminfoExists(term string, env []string) bool {
+	if term == "" {
+		return false
+	}
+	first := string(term[0])
+	for _, dir := range terminfoDirs(env) {
+		if dir == "" {
+			continue
+		}
+		if _, err := os.Stat(filepath.Join(dir, first, term)); err == nil {
+			return true
+		}
+	}
+	return false
+}
+
+func terminfoDirs(env []string) []string {
+	var dirs []string
+	if terminfo := envValue(env, "TERMINFO"); terminfo != "" {
+		dirs = append(dirs, terminfo)
+	}
+	if terminfoDirs := envValue(env, "TERMINFO_DIRS"); terminfoDirs != "" {
+		parts := strings.Split(terminfoDirs, ":")
+		for _, part := range parts {
+			if part == "" {
+				dirs = append(dirs, "/usr/share/terminfo")
+				continue
+			}
+			dirs = append(dirs, part)
+		}
+	}
+	if home, err := os.UserHomeDir(); err == nil {
+		dirs = append(dirs, filepath.Join(home, ".terminfo"))
+	}
+	dirs = append(dirs,
+		"/usr/share/terminfo",
+		"/usr/local/share/terminfo",
+		"/opt/homebrew/share/terminfo",
+	)
+	return dirs
+}
+
+func envValue(env []string, key string) string {
+	for i := len(env) - 1; i >= 0; i-- {
+		entry := env[i]
+		if strings.HasPrefix(entry, key+"=") {
+			return entry[len(key)+1:]
+		}
+	}
+	return ""
+}
+
+func setEnv(env []string, key, value string) []string {
+	if env == nil {
+		return []string{key + "=" + value}
+	}
+	for i, entry := range env {
+		if strings.HasPrefix(entry, key+"=") {
+			env[i] = key + "=" + value
+			return env
+		}
+	}
+	return append(env, key+"="+value)
 }
 
 func copyWithContext(ctx context.Context, dst io.Writer, src io.Reader, errCh chan<- error) {
@@ -173,6 +283,26 @@ func setTermios(fd int, termios *unix.Termios) error {
 		return nil
 	}
 	return unix.IoctlSetTermios(fd, unix.TIOCSETA, termios)
+}
+
+func inheritTermios(tty *os.File) error {
+	if tty == nil {
+		return nil
+	}
+	if !term.IsTerminal(int(os.Stdin.Fd())) {
+		return nil
+	}
+	termios, err := getTermios(int(os.Stdin.Fd()))
+	if err != nil {
+		return fmt.Errorf("get terminal settings: %w", err)
+	}
+	if termios == nil {
+		return nil
+	}
+	if err := setTermios(int(tty.Fd()), termios); err != nil {
+		return fmt.Errorf("set pty terminal settings: %w", err)
+	}
+	return nil
 }
 
 func forwardSignals(proc *os.Process, ptmx *os.File, resize bool) func() {
