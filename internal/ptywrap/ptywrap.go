@@ -140,6 +140,17 @@ func ensureTermFallback(cmd *exec.Cmd, logger *debug.Logger) {
 	if cmd.Env == nil {
 		cmd.Env = os.Environ()
 	}
+	if logger != nil {
+		term := envValue(cmd.Env, "TERM")
+		logger.Infof("ptywrap: term=%s", term)
+	}
+	if override := envValue(cmd.Env, "SECRETTY_TERM"); override != "" {
+		cmd.Env = setEnv(cmd.Env, "TERM", override)
+		if logger != nil {
+			logger.Infof("ptywrap: term_override=%s", override)
+		}
+		return
+	}
 	term := envValue(cmd.Env, "TERM")
 	if term == "" || terminfoExists(term, cmd.Env) {
 		return

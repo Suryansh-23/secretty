@@ -53,6 +53,7 @@ The wizard shows an animated logo header and guides the user through mode, rules
 It now also includes redaction style selection, multi-select rulesets, and optional shell auto-wrap hook installation.
 Use `./bin/secretty init --default` to write the default config without prompts.
 Set `SECRETTY_AUTOEXEC=1` to have the shell hook replace the shell via `exec` when auto-wrap is installed.
+Set `SECRETTY_TERM=xterm-256color` if your terminal's `$TERM` value does not have a working terminfo entry.
 
 ## Configuration
 Default path:
