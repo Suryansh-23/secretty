@@ -23,7 +23,7 @@ SecreTTY is a macOS-only PTY wrapper that redacts secrets from terminal output b
 ## Install
 Homebrew tap:
 ```
-brew install Suryansh-23/homebrew-secretty/secretty
+brew tap suryansh-23/secretty
 ```
 
 ## Build
