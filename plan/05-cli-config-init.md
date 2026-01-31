@@ -10,7 +10,7 @@
 - `secretty shell -- <shell>`
 - `secretty run -- <cmd...>`
 - `secretty init`
-- `secretty copy last`
+- `secretty copy`
 - `secretty doctor`
 - Optional but recommended: `secretty export --last N` (sanitized transcript only).
 

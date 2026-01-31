@@ -2,7 +2,7 @@
 
 ## Goals
 - Implement in-memory secret cache with TTL and optional disablement.
-- Add `secretty copy last` to place original secret in clipboard without printing.
+- Add `secretty copy` to place original secret in clipboard without printing.
 - Enforce strict mode policy.
 
 ## Cache design
@@ -34,19 +34,19 @@ func (c *Cache) GetLast() (SecretRecord, bool) { /* most recent */ }
 - In strict mode, cache can be disabled or limited.
 
 ## Acceptance criteria
-- `secretty copy last` copies the last secret when allowed.
+- `secretty copy` copies the last secret when allowed.
 - In strict mode with copy disabled, the command fails safely with a message.
 - No logs contain original bytes.
 
 ## Tests
 - Cache TTL expiration.
-- Copy last returns correct bytes.
+- Copy returns correct bytes.
 - Strict mode policy enforcement.
 
 ## Validation plan
 - Run `go test ./internal/cache ./internal/clipboard` for cache and clipboard logic.
-- Manual: `go run ./cmd/secretty run -- printf \"0x<64hex>\\n\"` then `go run ./cmd/secretty copy last` and verify `pbpaste` returns the original bytes.
-- Manual strict-mode check: `go run ./cmd/secretty --strict copy last` should fail safely if `disable_copy_original=true`.
+- Manual: `go run ./cmd/secretty run -- printf \"0x<64hex>\\n\"` then `go run ./cmd/secretty copy` and verify `pbpaste` returns the original bytes.
+- Manual strict-mode check: `go run ./cmd/secretty --strict copy` should fail safely if `disable_copy_original=true`.
 - Confirm no stdout/stderr prints the original secret during copy.
 
 ## Risks

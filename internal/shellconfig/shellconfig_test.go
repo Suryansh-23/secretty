@@ -42,7 +42,7 @@ func TestRemoveBlock(t *testing.T) {
 
 func TestInstallBlock(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "shellrc")
-	changed, err := InstallBlock(path, "zsh", "/tmp/secretty/config.yaml")
+	changed, err := InstallBlock(path, "zsh", "/tmp/secretty/config.yaml", "/usr/local/bin/secretty")
 	if err != nil {
 		t.Fatalf("install: %v", err)
 	}
@@ -59,13 +59,10 @@ func TestInstallBlock(t *testing.T) {
 	if !strings.Contains(string(data), "command -v secretty") {
 		t.Fatalf("expected command existence check")
 	}
-	if !strings.Contains(string(data), "SECRETTY_AUTOEXEC") {
-		t.Fatalf("expected autoexec toggle")
-	}
-	if !strings.Contains(string(data), "exec secretty") {
+	if !strings.Contains(string(data), "exec \"$secretty_bin\"") {
 		t.Fatalf("expected exec wrapper")
 	}
-	if !strings.Contains(string(data), "secretty || echo") {
-		t.Fatalf("expected non-fatal wrapper")
+	if !strings.Contains(string(data), "exec \"$secretty_bin\" </dev/tty >/dev/tty 2>/dev/tty") {
+		t.Fatalf("expected tty redirection")
 	}
 }

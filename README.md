@@ -3,9 +3,9 @@
 SecreTTY is a macOS-only PTY wrapper that redacts secrets from terminal output before they reach the screen. It is designed for live demos, screen shares, and recordings where accidental secret exposure is a risk.
 
 ## Status
-- MVP implementation is functional for core flows (PTY wrapper, redaction pipeline, detection, init wizard, copy last, status line, doctor).
+- MVP implementation is functional for core flows (PTY wrapper, redaction pipeline, detection, init wizard, copy, status line, doctor).
 - Strict mode and policy controls are implemented in config.
-- `copy last` works for active sessions via IPC (no on-disk persistence).
+- `copy` works for active sessions via IPC (no on-disk persistence).
 
 ## Key features
 - Runs shells/commands under a PTY to preserve terminal semantics.
@@ -39,7 +39,7 @@ Binary output: `bin/secretty`
 ./bin/secretty run -- printf "PRIVATE_KEY=0x<64hex>\n"
 ./bin/secretty init
 ./bin/secretty reset
-./bin/secretty copy last
+./bin/secretty copy
 ./bin/secretty status
 ./bin/secretty doctor
 ```
@@ -52,8 +52,9 @@ Binary output: `bin/secretty`
 The wizard shows an animated logo header and guides the user through mode, ruleset, and clipboard settings before writing `~/.config/secretty/config.yaml`.
 It now also includes redaction style selection, multi-select rulesets, and optional shell auto-wrap hook installation.
 Use `./bin/secretty init --default` to write the default config without prompts.
-Set `SECRETTY_AUTOEXEC=1` to have the shell hook replace the shell via `exec` when auto-wrap is installed.
 Set `SECRETTY_TERM=xterm-256color` if your terminal's `$TERM` value does not have a working terminfo entry.
+Shell auto-wrap installs early-start hooks (zsh: `~/.zshenv`, bash: `~/.bash_profile`, fish: `~/.config/fish/conf.d/secretty.fish`) and always `exec`s the wrapper so prompt themes initialize inside SecreTTY.
+Set `SECRETTY_HOOK_DEBUG=1` to print shell hook diagnostics to stderr during startup.
 
 ## Configuration
 Default path:
@@ -189,7 +190,7 @@ If you enabled shell auto-wrap, this removes the auto-wrap blocks as well.
 
 ## Limitations
 - macOS-only MVP.
-- `copy last` only works while a SecreTTY session is running (no persistence across sessions).
+- `copy` only works while a SecreTTY session is running (no persistence across sessions).
 - tmux compatibility is not guaranteed.
 - Interactive shells run with unbuffered output to preserve prompt responsiveness; this can reduce cross-chunk redaction for extremely fragmented output.
 

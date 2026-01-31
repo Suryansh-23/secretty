@@ -26,7 +26,7 @@ SecreTTY is a macOS-only PTY wrapper that redacts secrets from terminal output b
 - `secretty`: start an interactive protected shell (default login shell).
 - `secretty run -- <cmd...>`: run a command under PTY, exit with child status.
 - `secretty init`: first-run wizard that generates config, enables web3 rules, self-test.
-- `secretty copy last`: copy last redacted secret to clipboard without printing.
+- `secretty copy`: copy last redacted secret to clipboard without printing.
 - `secretty doctor`: print environment diagnosis and config status.
 
 ## CLI flags (global)

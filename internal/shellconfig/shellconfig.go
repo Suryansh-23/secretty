@@ -16,8 +16,8 @@ const (
 )
 
 // InstallBlock removes any existing block and appends a new one.
-func InstallBlock(path, shellKind, configPath string) (bool, error) {
-	block, err := blockForShell(shellKind, configPath)
+func InstallBlock(path, shellKind, configPath, binPath string) (bool, error) {
+	block, err := blockForShell(shellKind, configPath, binPath)
 	if err != nil {
 		return false, err
 	}
@@ -96,38 +96,85 @@ func RemoveBlock(path string) (bool, error) {
 	return true, nil
 }
 
-func blockForShell(kind, configPath string) ([]string, error) {
+func blockForShell(kind, configPath, binPath string) ([]string, error) {
 	configPath = strings.TrimSpace(configPath)
 	if configPath == "" {
 		return nil, errors.New("config path required")
 	}
+	binPath = strings.TrimSpace(binPath)
 	switch kind {
-	case "zsh", "bash", "sh":
+	case "zsh":
 		return []string{
 			beginMarker,
-			"if [[ -o interactive ]] && [[ -t 0 ]] && [[ -z \"$SECRETTY_WRAPPED\" ]]; then",
-			"  if command -v secretty >/dev/null 2>&1; then",
-			fmt.Sprintf("    export SECRETTY_CONFIG=\"%s\"", configPath),
-			"    if [[ -n \"$SECRETTY_AUTOEXEC\" ]]; then",
-			"      exec secretty",
-			"    else",
-			"      secretty || echo \"secretty: failed to start; continuing without wrapper\" >&2",
+			"if [[ -o interactive ]] && [[ -z \"$SECRETTY_WRAPPED\" ]]; then",
+			"  if [[ -r /dev/tty ]]; then",
+			"    secretty_bin=\"\"",
+			fmt.Sprintf("    if [[ -n \"%s\" && -x \"%s\" ]]; then", binPath, binPath),
+			fmt.Sprintf("      secretty_bin=\"%s\"", binPath),
+			"    elif command -v secretty >/dev/null 2>&1; then",
+			"      secretty_bin=\"$(command -v secretty)\"",
 			"    fi",
+			"    if [[ -n \"$SECRETTY_HOOK_DEBUG\" ]]; then",
+			"      echo \"secretty hook: shell=zsh interactive=$- wrapped=$SECRETTY_WRAPPED tty_ok=1 bin=$secretty_bin\" >&2",
+			"    fi",
+			"    if [[ -n \"$secretty_bin\" ]]; then",
+			fmt.Sprintf("      export SECRETTY_CONFIG=\"%s\"", configPath),
+			"      exec \"$secretty_bin\" </dev/tty >/dev/tty 2>/dev/tty",
+			"    fi",
+			"  elif [[ -n \"$SECRETTY_HOOK_DEBUG\" ]]; then",
+			"    echo \"secretty hook: shell=zsh interactive=$- wrapped=$SECRETTY_WRAPPED tty_ok=0\" >&2",
 			"  fi",
 			"fi",
+			endMarker,
+		}, nil
+	case "bash", "sh":
+		return []string{
+			beginMarker,
+			"case $- in",
+			"  *i*)",
+			"    if [ -z \"$SECRETTY_WRAPPED\" ]; then",
+			"      if [ -r /dev/tty ]; then",
+			"        secretty_bin=\"\"",
+			fmt.Sprintf("        if [ -n \"%s\" ] && [ -x \"%s\" ]; then", binPath, binPath),
+			fmt.Sprintf("          secretty_bin=\"%s\"", binPath),
+			"        elif command -v secretty >/dev/null 2>&1; then",
+			"          secretty_bin=\"$(command -v secretty)\"",
+			"        fi",
+			"        if [ -n \"$SECRETTY_HOOK_DEBUG\" ]; then",
+			"          echo \"secretty hook: shell=bash interactive=$- wrapped=$SECRETTY_WRAPPED tty_ok=1 bin=$secretty_bin\" >&2",
+			"        fi",
+			"        if [ -n \"$secretty_bin\" ]; then",
+			fmt.Sprintf("          export SECRETTY_CONFIG=\"%s\"", configPath),
+			"          exec \"$secretty_bin\" </dev/tty >/dev/tty 2>/dev/tty",
+			"        fi",
+			"      elif [ -n \"$SECRETTY_HOOK_DEBUG\" ]; then",
+			"        echo \"secretty hook: shell=bash interactive=$- wrapped=$SECRETTY_WRAPPED tty_ok=0\" >&2",
+			"      fi",
+			"    fi",
+			"    ;;",
+			"esac",
 			endMarker,
 		}, nil
 	case "fish":
 		return []string{
 			beginMarker,
-			"if status --is-interactive; and test -t 0; and not set -q SECRETTY_WRAPPED",
-			"  if type -q secretty",
-			fmt.Sprintf("    set -gx SECRETTY_CONFIG \"%s\"", configPath),
-			"    if set -q SECRETTY_AUTOEXEC",
-			"      exec secretty",
-			"    else",
-			"      secretty; or echo \"secretty: failed to start; continuing without wrapper\" >&2",
+			"if status --is-interactive; and not set -q SECRETTY_WRAPPED",
+			"  if test -r /dev/tty",
+			"    set -l secretty_bin \"\"",
+			fmt.Sprintf("    if test -n \"%s\" -a -x \"%s\"", binPath, binPath),
+			fmt.Sprintf("      set secretty_bin \"%s\"", binPath),
+			"    else if type -q secretty",
+			"      set secretty_bin (command -v secretty)",
 			"    end",
+			"    if set -q SECRETTY_HOOK_DEBUG",
+			"      echo \"secretty hook: shell=fish wrapped=$SECRETTY_WRAPPED tty_ok=1 bin=$secretty_bin\" >&2",
+			"    end",
+			"    if test -n \"$secretty_bin\"",
+			fmt.Sprintf("      set -gx SECRETTY_CONFIG \"%s\"", configPath),
+			"      exec $secretty_bin </dev/tty >/dev/tty 2>/dev/tty",
+			"    end",
+			"  else if set -q SECRETTY_HOOK_DEBUG",
+			"    echo \"secretty hook: shell=fish wrapped=$SECRETTY_WRAPPED tty_ok=0\" >&2",
 			"  end",
 			"end",
 			endMarker,

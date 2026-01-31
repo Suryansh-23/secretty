@@ -1,6 +1,7 @@
 package ptywrap
 
 import (
+	"bufio"
 	"context"
 	"errors"
 	"fmt"
@@ -11,6 +12,7 @@ import (
 	"path/filepath"
 	"strings"
 	"syscall"
+	"time"
 
 	"github.com/creack/pty"
 	"github.com/suryansh-23/secretty/internal/debug"
@@ -38,12 +40,12 @@ func RunCommand(ctx context.Context, cmd *exec.Cmd, opts Options) (int, error) {
 	}
 	ensureTermFallback(cmd, opts.Logger)
 
-	ptmx, err := startWithPTY(cmd, isTTY, opts.Logger)
-	if err != nil {
-		return 1, err
+	var termios *unix.Termios
+	if isTTY {
+		if captured, err := getTermios(stdinFD); err == nil {
+			termios = captured
+		}
 	}
-	defer func() { _ = ptmx.Close() }()
-
 	restore, err := maybeMakeRaw(opts.RawMode && isTTY)
 	if err != nil {
 		return 1, err
@@ -52,9 +54,14 @@ func RunCommand(ctx context.Context, cmd *exec.Cmd, opts Options) (int, error) {
 		defer restore()
 	}
 
+	ptmx, err := startWithPTY(cmd, isTTY, termios, opts.Logger)
+	if err != nil {
+		return 1, err
+	}
+	defer func() { _ = ptmx.Close() }()
+
 	if isTTY {
 		_ = pty.InheritSize(os.Stdin, ptmx)
-		setForegroundProcessGroup(ptmx, cmd.Process, opts.Logger)
 	}
 	stopSignals := forwardSignals(cmd.Process, ptmx, isTTY)
 	defer stopSignals()
@@ -63,7 +70,7 @@ func RunCommand(ctx context.Context, cmd *exec.Cmd, opts Options) (int, error) {
 	defer cancel()
 
 	errCh := make(chan error, 1)
-	go func() { _, _ = io.Copy(ptmx, os.Stdin) }()
+	go copyInput(ctx, ptmx, os.Stdin, opts.Logger)
 	go copyWithContext(ctx, out, ptmx, errCh)
 
 	waitErr := cmd.Wait()
@@ -78,7 +85,7 @@ func RunCommand(ctx context.Context, cmd *exec.Cmd, opts Options) (int, error) {
 	return exitCode(waitErr), nil
 }
 
-func startWithPTY(cmd *exec.Cmd, isTTY bool, logger *debug.Logger) (*os.File, error) {
+func startWithPTY(cmd *exec.Cmd, isTTY bool, termios *unix.Termios, logger *debug.Logger) (*os.File, error) {
 	ptmx, tty, err := pty.Open()
 	if err != nil {
 		return nil, fmt.Errorf("open pty: %w", err)
@@ -87,10 +94,10 @@ func startWithPTY(cmd *exec.Cmd, isTTY bool, logger *debug.Logger) (*os.File, er
 		_ = tty.Close()
 	}()
 
-	if isTTY {
-		if err := inheritTermios(tty); err != nil {
+	if isTTY && termios != nil {
+		if err := setTermios(int(tty.Fd()), termios); err != nil {
 			_ = ptmx.Close()
-			return nil, err
+			return nil, fmt.Errorf("set pty terminal settings: %w", err)
 		}
 	}
 	if winsize := hostWinsize(int(os.Stdin.Fd()), logger); winsize != nil {
@@ -112,6 +119,10 @@ func startWithPTY(cmd *exec.Cmd, isTTY bool, logger *debug.Logger) (*os.File, er
 	if err := cmd.Start(); err != nil {
 		_ = ptmx.Close()
 		return nil, fmt.Errorf("start pty command: %w", err)
+	}
+	if isTTY {
+		setForegroundProcessGroup(tty, cmd.Process, logger)
+		flushPendingInput(tty, logger)
 	}
 	return ptmx, nil
 }
@@ -245,6 +256,156 @@ func closeOutput(out io.Writer) error {
 	return nil
 }
 
+const responseDrainWindow = 1500 * time.Millisecond
+
+func copyInput(ctx context.Context, dst *os.File, src io.Reader, logger *debug.Logger) {
+	reader := bufio.NewReader(src)
+	filter := newResponseFilter(responseDrainWindow)
+	buf := make([]byte, 4096)
+	for {
+		if ctx.Err() != nil {
+			return
+		}
+		n, err := reader.Read(buf)
+		if n > 0 {
+			chunk := buf[:n]
+			if filter.active() {
+				filtered := filter.Filter(chunk)
+				if !filter.active() {
+					filtered = append(filtered, filter.Flush()...)
+				}
+				if len(filtered) > 0 {
+					_, _ = dst.Write(filtered)
+				}
+			} else {
+				if pending := filter.Flush(); len(pending) > 0 {
+					_, _ = dst.Write(pending)
+				}
+				_, _ = dst.Write(chunk)
+			}
+		}
+		if err != nil {
+			if pending := filter.Flush(); len(pending) > 0 {
+				_, _ = dst.Write(pending)
+			}
+			if logger != nil && !errors.Is(err, io.EOF) {
+				logger.Infof("ptywrap: stdin_copy_error=%v", err)
+			}
+			return
+		}
+	}
+}
+
+type responseFilter struct {
+	deadline time.Time
+	buffer   []byte
+}
+
+func newResponseFilter(window time.Duration) *responseFilter {
+	return &responseFilter{deadline: time.Now().Add(window)}
+}
+
+func (f *responseFilter) active() bool {
+	return time.Now().Before(f.deadline)
+}
+
+func (f *responseFilter) Flush() []byte {
+	if len(f.buffer) == 0 {
+		return nil
+	}
+	out := append([]byte(nil), f.buffer...)
+	f.buffer = f.buffer[:0]
+	return out
+}
+
+func (f *responseFilter) Filter(in []byte) []byte {
+	f.buffer = append(f.buffer, in...)
+	var out []byte
+	for len(f.buffer) > 0 {
+		if !f.active() {
+			out = append(out, f.buffer...)
+			f.buffer = f.buffer[:0]
+			break
+		}
+		if f.buffer[0] != 0x1b {
+			out = append(out, f.buffer[0])
+			f.buffer = f.buffer[1:]
+			continue
+		}
+		if len(f.buffer) < 2 {
+			break
+		}
+		if f.buffer[1] == ']' {
+			if seqLen, ok := osc11ResponseLen(f.buffer); ok {
+				f.buffer = f.buffer[seqLen:]
+				continue
+			}
+		}
+		if f.buffer[1] == '[' {
+			if seqLen, ok := dsrResponseLen(f.buffer); ok {
+				f.buffer = f.buffer[seqLen:]
+				continue
+			}
+		}
+		out = append(out, f.buffer[0])
+		f.buffer = f.buffer[1:]
+	}
+	return out
+}
+
+func osc11ResponseLen(buf []byte) (int, bool) {
+	if len(buf) < 5 {
+		return 0, false
+	}
+	if buf[0] != 0x1b || buf[1] != ']' || buf[2] != '1' || buf[3] != '1' {
+		return 0, false
+	}
+	start := 4
+	if buf[start] == ';' {
+		start++
+	}
+	for i := start; i < len(buf); i++ {
+		if buf[i] == 0x07 { // BEL
+			return i + 1, true
+		}
+		if buf[i] == 0x1b && i+1 < len(buf) && buf[i+1] == '\\' { // ST
+			return i + 2, true
+		}
+	}
+	return 0, false
+}
+
+func dsrResponseLen(buf []byte) (int, bool) {
+	if len(buf) < 4 {
+		return 0, false
+	}
+	if buf[0] != 0x1b || buf[1] != '[' {
+		return 0, false
+	}
+	i := 2
+	seenDigit := false
+	for i < len(buf) {
+		b := buf[i]
+		if b >= '0' && b <= '9' {
+			seenDigit = true
+			i++
+			continue
+		}
+		if b == ';' {
+			i++
+			continue
+		}
+		break
+	}
+	if !seenDigit || i >= len(buf) {
+		return 0, false
+	}
+	if buf[i] == 'R' {
+		return i + 1, true
+	}
+	return 0, false
+}
+
 func maybeMakeRaw(enable bool) (func(), error) {
 	if !enable {
 		return nil, nil
@@ -296,26 +457,6 @@ func setTermios(fd int, termios *unix.Termios) error {
 	return unix.IoctlSetTermios(fd, unix.TIOCSETA, termios)
 }
 
-func inheritTermios(tty *os.File) error {
-	if tty == nil {
-		return nil
-	}
-	if !term.IsTerminal(int(os.Stdin.Fd())) {
-		return nil
-	}
-	termios, err := getTermios(int(os.Stdin.Fd()))
-	if err != nil {
-		return fmt.Errorf("get terminal settings: %w", err)
-	}
-	if termios == nil {
-		return nil
-	}
-	if err := setTermios(int(tty.Fd()), termios); err != nil {
-		return fmt.Errorf("set pty terminal settings: %w", err)
-	}
-	return nil
-}
-
 func forwardSignals(proc *os.Process, ptmx *os.File, resize bool) func() {
 	if proc == nil {
 		return func() {}
@@ -361,6 +502,24 @@ func setForegroundProcessGroup(ptmx *os.File, proc *os.Process, logger *debug.Lo
 		if logger != nil {
 			logger.Infof("ptywrap: set_fg_pgrp_failed=%v", err)
 		}
+	}
+}
+
+func flushPendingInput(tty *os.File, logger *debug.Logger) {
+	if tty == nil {
+		return
+	}
+	if err := unix.IoctlSetInt(int(tty.Fd()), syscall.TIOCFLUSH, syscall.TCIFLUSH); err != nil {
+		if errors.Is(err, unix.ENOTTY) || errors.Is(err, syscall.ENOTTY) || errors.Is(err, syscall.EOPNOTSUPP) || errors.Is(err, syscall.ENOTSUP) {
+			return
+		}
+		if logger != nil {
+			logger.Infof("ptywrap: tcflush_failed=%v", err)
+		}
+		return
+	}
+	if logger != nil {
+		logger.Infof("ptywrap: tcflush=ok")
 	}
 }
 

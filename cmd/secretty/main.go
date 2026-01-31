@@ -361,16 +361,10 @@ func newResetCmd(cfgPath *string) *cobra.Command {
 }
 
 func newCopyCmd(state *appState) *cobra.Command {
-	copyCmd := &cobra.Command{
+	return &cobra.Command{
 		Use:   "copy",
-		Short: "Copy redacted secrets without rendering",
-		RunE: func(cmd *cobra.Command, args []string) error {
-			return cmd.Help()
-		},
-	}
-	copyCmd.AddCommand(&cobra.Command{
-		Use:   "last",
-		Short: "Copy the last redacted secret",
+		Short: "Copy the last redacted secret without rendering",
+		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if !state.cfg.Overrides.CopyWithoutRender.Enabled {
 				return errors.New("copy-without-render is disabled")
@@ -417,8 +411,7 @@ func newCopyCmd(state *appState) *cobra.Command {
 			}
 			return nil
 		},
-	})
-	return copyCmd
+	}
 }
 
 func newDoctorCmd(state *appState) *cobra.Command {
@@ -522,9 +515,9 @@ func detectShellOptions() []shellOption {
 		return nil
 	}
 	candidates := []shellOption{
-		{Name: "zsh", Kind: "zsh", Path: filepath.Join(home, ".zshrc")},
-		{Name: "bash", Kind: "bash", Path: filepath.Join(home, ".bashrc")},
-		{Name: "fish", Kind: "fish", Path: filepath.Join(home, ".config", "fish", "config.fish")},
+		{Name: "zsh", Kind: "zsh", Path: filepath.Join(home, ".zshenv")},
+		{Name: "bash", Kind: "bash", Path: filepath.Join(home, ".bash_profile")},
+		{Name: "fish", Kind: "fish", Path: filepath.Join(home, ".config", "fish", "conf.d", "secretty.fish")},
 	}
 	current := filepath.Base(os.Getenv("SHELL"))
 	etcShells := readEtcShells()
@@ -565,12 +558,13 @@ func installShellHooks(selected []string, options []shellOption, configPath stri
 	for _, opt := range options {
 		lookup[opt.Kind] = opt
 	}
+	binPath := resolveSecrettyBinary()
 	for _, kind := range selected {
 		opt, ok := lookup[kind]
 		if !ok {
 			continue
 		}
-		changed, err := shellconfig.InstallBlock(opt.Path, opt.Kind, configPath)
+		changed, err := shellconfig.InstallBlock(opt.Path, opt.Kind, configPath, binPath)
 		if err != nil {
 			return err
 		}
@@ -581,18 +575,73 @@ func installShellHooks(selected []string, options []shellOption, configPath stri
 	return nil
 }
 
+func resolveSecrettyBinary() string {
+	exe, _ := os.Executable()
+	exe = filepath.Clean(exe)
+	if isExecutableFile(exe) && isStableExecutablePath(exe) {
+		return exe
+	}
+	if resolved, err := exec.LookPath("secretty"); err == nil {
+		resolved = filepath.Clean(resolved)
+		if isExecutableFile(resolved) && isStableExecutablePath(resolved) {
+			return resolved
+		}
+	}
+	if isExecutableFile(exe) {
+		return exe
+	}
+	if resolved, err := exec.LookPath("secretty"); err == nil && isExecutableFile(resolved) {
+		return filepath.Clean(resolved)
+	}
+	return ""
+}
+
+func isStableExecutablePath(path string) bool {
+	if path == "" {
+		return false
+	}
+	cleaned := filepath.Clean(path)
+	tempDir := filepath.Clean(os.TempDir())
+	if tempDir != "." && tempDir != "/" && strings.HasPrefix(cleaned, tempDir+string(os.PathSeparator)) {
+		return false
+	}
+	if strings.HasPrefix(cleaned, "/var/folders/") || strings.HasPrefix(cleaned, "/private/var/folders/") {
+		return false
+	}
+	if strings.HasPrefix(cleaned, "/tmp/") {
+		return false
+	}
+	return true
+}
+
+func isExecutableFile(path string) bool {
+	if path == "" {
+		return false
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		return false
+	}
+	if info.IsDir() {
+		return false
+	}
+	return info.Mode().Perm()&0o111 != 0
+}
+
 func defaultShellConfigPaths() []string {
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return nil
 	}
 	return []string{
+		filepath.Join(home, ".zshenv"),
 		filepath.Join(home, ".zshrc"),
 		filepath.Join(home, ".zprofile"),
 		filepath.Join(home, ".bashrc"),
 		filepath.Join(home, ".bash_profile"),
 		filepath.Join(home, ".profile"),
 		filepath.Join(home, ".config", "fish", "config.fish"),
+		filepath.Join(home, ".config", "fish", "conf.d", "secretty.fish"),
 	}
 }
 
@@ -667,6 +716,11 @@ func startIPCServer(cfg config.Config, cache *cache.Cache) (string, func(), erro
 
 func runWithPTY(ctx context.Context, cfg config.Config, cfgPath string, command *exec.Cmd, cache *cache.Cache, logger *debug.Logger, interactive bool) error {
 	command.Env = os.Environ()
+	if os.Getenv("SECRETTY_HOOK_DEBUG") != "" {
+		stdinTTY := term.IsTerminal(int(os.Stdin.Fd()))
+		stdoutTTY := term.IsTerminal(int(os.Stdout.Fd()))
+		fmt.Fprintf(os.Stderr, "secretty wrapper: interactive=%t stdin_tty=%t stdout_tty=%t cfg=%s cmd=%s\n", interactive, stdinTTY, stdoutTTY, cfgPath, strings.Join(command.Args, " "))
+	}
 	if os.Getenv("SECRETTY_WRAPPED") == "" {
 		command.Env = append(command.Env, "SECRETTY_WRAPPED=1")
 	}
@@ -691,7 +745,11 @@ func runWithPTY(ctx context.Context, cfg config.Config, cfgPath string, command 
 	}
 	detector := detect.NewEngine(cfg)
 	stream := redact.NewStream(os.Stdout, cfg, detector, cache, logger)
-	exitCode, err := ptywrap.RunCommand(ctx, command, ptywrap.Options{RawMode: true, Output: stream, Logger: logger})
+	exitCode, err := ptywrap.RunCommand(ctx, command, ptywrap.Options{
+		RawMode: true,
+		Output:  stream,
+		Logger:  logger,
+	})
 	if err != nil {
 		return err
 	}

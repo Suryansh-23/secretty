@@ -42,11 +42,13 @@
 - CLI compiles; `secretty` and `secretty shell`/`run` execute under a PTY.
 - Commands implemented: `secretty`, `secretty shell -- <shell>`, `secretty run -- <cmd...>`, `secretty init`, `secretty reset`, `secretty copy last`, `secretty status`, `secretty doctor`.
 - Global flags: `--config`, `--strict`, `--debug`, `--no-init-hints`.
+- PTY wrapper applies TERM fallbacks when terminfo is missing; `SECRETTY_TERM` overrides the child TERM.
 
 ## Lint / Format / Test
 - `Makefile` provides `build`, `test`, `lint`, `fmt` targets.
 - Config unit tests live under `internal/config`.
 - `scripts/smoke.sh` provides a minimal smoke run (uses `python3` to generate a key).
+- GitHub Actions runs `go mod tidy`, `go test ./...`, and `go vet ./...` on macOS.
 
 ## Build / Deploy
 - Local build is `make build` (outputs `bin/secretty`).
@@ -76,11 +78,13 @@
 - IPC socket (`SECRETTY_SOCKET`) used to support `copy last` across wrapped shells.
 - Shell hook installation/removal (auto-wrap) lives in `internal/shellconfig`.
 - No external services or network calls; spec requires local-only behavior.
+- Shell hooks check for the `secretty` binary and auto-`exec` from early startup files to keep prompt init inside SecreTTY.
 
 ## Conventions
 - Security invariants in spec: never print/log originals, do not mutate ANSI escape sequences, handle chunk boundaries, strict mode policy.
 - Streaming redaction pipeline with ANSI-aware tokenizer.
 - `SECRETTY_WRAPPED` and `SECRETTY_CONFIG` are propagated into child shells; `SECRETTY_SOCKET` advertises IPC cache.
+- PTY wrapper emits only sanitized diagnostics under `--debug` (TTY state, TERM, winsize, fg pgrp).
 
 ## Gotchas
 - Spec requires PTY semantics (not a simple pipe) and ANSI-safe redaction.
@@ -109,3 +113,10 @@
 - 2026-01-24: PTY slave is now put into raw mode for interactive runs to stabilize key handling. Lint/test/build/smoke run succeeded.
 - 2026-01-24: Reverted PTY slave raw mode; interactive runs now use standard pty.Start to restore job control and key handling. Lint/test/build/smoke run succeeded.
 - 2026-01-24: Reworked PTY wrapper to open PTYs directly, inherit terminal settings onto the slave, keep local raw mode with signals, and forward more signals (SIGQUIT/SIGTSTP). Lint/test/build/smoke run succeeded.
+- 2026-01-31: Shell hooks now embed a resolved SecreTTY binary path (to avoid early PATH issues) and emit optional `SECRETTY_HOOK_DEBUG` diagnostics; wrapper prints debug when that env is set. README updated; tests/build/smoke run (lint/test fail due to missing context/gotty deps).
+- 2026-01-31: PTY wrapper now captures host termios before raw mode and applies to the PTY slave so we can enable raw input earlier without contaminating child settings (reduces leaked terminal response sequences at startup). Tests/build/smoke run (lint/test still blocked by context/gotty deps).
+- 2026-01-31: PTY wrapper now sets the child process group as foreground on the PTY slave immediately after start (prevents early termios changes from being blocked, reducing leaked OSC/DSR responses). Tests/build/smoke run (lint/test still blocked by context/gotty deps).
+- 2026-01-31: PTY wrapper now tcflushes PTY slave input right after foregrounding to discard early terminal response bytes before the shell reads. Tests/build/smoke run (lint/test still blocked by context/gotty deps).
+- 2026-01-31: PTY wrapper now drains OSC 11/DSR terminal response bytes for the first 1.5s on input (startup-only) to prevent stray background/cursor responses from leaking into the prompt. Tests/build/smoke run (lint/test still blocked by context/gotty deps).
+- 2026-01-31: Simplified clipboard command to `secretty copy` (removed `copy last` subcommand) and updated docs/plans. Tests/build/smoke run (lint/test still blocked by context/gotty deps).
+- 2026-01-31: Shell hook generator updated to auto-exec SecreTTY from early startup files (zshenv/bash_profile/fish conf.d) with stdio bound to /dev/tty; prompt hooks removed.
