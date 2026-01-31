@@ -1,3 +1,4 @@
+version: 2
 project_name: secretty
 
 builds:
@@ -32,6 +33,7 @@ brews:
     repository:
       owner: Suryansh-23
       name: homebrew-secretty
+      token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
     directory: Formula
     commit_author:
       name: secretty-bot
