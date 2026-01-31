@@ -12,6 +12,8 @@
 - `.gitignore`: Go-oriented ignores.
 - `.golangci.yml`: Lint configuration.
 - `.github/workflows/ci.yml`: macOS CI for tests/vet.
+- `.github/workflows/release.yml`: Tag-based release workflow (GoReleaser).
+- `.goreleaser.yml`: Release + Homebrew tap configuration.
 - `packaging/homebrew/secretty.rb`: Homebrew formula template (SHA placeholder).
 - `scripts/smoke.sh`: Minimal smoke run that asserts redaction.
 
@@ -53,6 +55,7 @@
 ## Build / Deploy
 - Local build is `make build` (outputs `bin/secretty`).
 - Homebrew formula template is in `packaging/homebrew/secretty.rb`.
+- Tagged releases (`v*`) run GoReleaser to publish GitHub releases and update the Homebrew tap (requires `HOMEBREW_TAP_GITHUB_TOKEN` secret).
 
 ## Data and schema
 - YAML config schema implemented in `internal/config` with defaults and validation.
@@ -120,3 +123,4 @@
 - 2026-01-31: PTY wrapper now drains OSC 11/DSR terminal response bytes for the first 1.5s on input (startup-only) to prevent stray background/cursor responses from leaking into the prompt. Tests/build/smoke run (lint/test still blocked by context/gotty deps).
 - 2026-01-31: Simplified clipboard command to `secretty copy` (removed `copy last` subcommand) and updated docs/plans. Tests/build/smoke run (lint/test still blocked by context/gotty deps).
 - 2026-01-31: Shell hook generator updated to auto-exec SecreTTY from early startup files (zshenv/bash_profile/fish conf.d) with stdio bound to /dev/tty; prompt hooks removed.
+- 2026-02-01: Added tag-based release workflow + GoReleaser config with Homebrew tap publishing; README/AGENTS updated with badges and release notes.

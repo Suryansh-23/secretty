@@ -1,0 +1,39 @@
+project_name: secretty
+
+builds:
+  - id: secretty
+    main: ./cmd/secretty
+    goos:
+      - darwin
+    goarch:
+      - amd64
+      - arm64
+    env:
+      - CGO_ENABLED=0
+
+archives:
+  - id: default
+    format: tar.gz
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+
+checksum:
+  name_template: checksums.txt
+
+release:
+  github:
+    owner: Suryansh-23
+    name: secretty
+
+brews:
+  - name: secretty
+    homepage: https://github.com/Suryansh-23/secretty
+    description: macOS PTY wrapper that redacts secrets from terminal output
+    license: MIT
+    repository:
+      owner: Suryansh-23
+      name: homebrew-secretty
+    directory: Formula
+    commit_author:
+      name: secretty-bot
+      email: noreply@github.com
+    url_template: "https://github.com/Suryansh-23/secretty/releases/download/{{ .Tag }}/{{ .ArtifactName }}"

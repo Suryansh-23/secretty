@@ -1,4 +1,7 @@
 # SecreTTY
+[![CI](https://github.com/Suryansh-23/secretty/actions/workflows/ci.yml/badge.svg)](https://github.com/Suryansh-23/secretty/actions/workflows/ci.yml)
+[![Release](https://github.com/Suryansh-23/secretty/actions/workflows/release.yml/badge.svg)](https://github.com/Suryansh-23/secretty/actions/workflows/release.yml)
+[![Homebrew](https://img.shields.io/badge/homebrew-secretty-blue)](https://github.com/Suryansh-23/homebrew-secretty)
 
 SecreTTY is a macOS-only PTY wrapper that redacts secrets from terminal output before they reach the screen. It is designed for live demos, screen shares, and recordings where accidental secret exposure is a risk.
 
@@ -18,9 +21,9 @@ SecreTTY is a macOS-only PTY wrapper that redacts secrets from terminal output b
 - Animated onboarding wizard with theme + logo.
 
 ## Install
-Homebrew tap (planned):
+Homebrew tap:
 ```
-brew install suryansh-23/tap/secretty
+brew install Suryansh-23/homebrew-secretty/secretty
 ```
 
 ## Build
@@ -44,6 +47,10 @@ Binary output: `bin/secretty`
 ./bin/secretty doctor
 ```
 `secretty status` prints whether the current shell is wrapped (`SECRETTY_WRAPPED=1`) and whether IPC is available.
+
+## Releases
+Tagged releases (`v*`) publish GitHub release assets and update the Homebrew tap via GitHub Actions + GoReleaser.
+To enable Homebrew updates, set the `HOMEBREW_TAP_GITHUB_TOKEN` secret with write access to the tap repository.
 
 ## Onboarding
 ```
