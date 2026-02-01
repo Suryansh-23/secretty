@@ -39,3 +39,10 @@ brews:
       name: secretty-bot
       email: noreply@github.com
     url_template: "https://github.com/Suryansh-23/secretty/releases/download/{{ .Tag }}/{{ .ArtifactName }}"
+    caveats: |-
+      SecreTTY may install shell hooks. Restart your shell to apply changes:
+        exec $SHELL -l
+      Or reload your shell config:
+        source ~/.zshrc
+        source ~/.bashrc
+        source ~/.config/fish/config.fish
