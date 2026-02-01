@@ -117,6 +117,8 @@
 - 2026-01-24: Reverted PTY slave raw mode; interactive runs now use standard pty.Start to restore job control and key handling. Lint/test/build/smoke run succeeded.
 - 2026-01-24: Reworked PTY wrapper to open PTYs directly, inherit terminal settings onto the slave, keep local raw mode with signals, and forward more signals (SIGQUIT/SIGTSTP). Lint/test/build/smoke run succeeded.
 - 2026-02-01: Expanded api_key_label regex to match *_API_KEY labels; updated canonical config defaults.
+- 2026-02-01: Glow masking now hashes each secret to pick a palette offset, avoids adjacent repeats, and adds tests for deterministic glow selection.
+- 2026-02-01: Expanded glow palette with additional teal/indigo/purple tones for richer gradients.
 - 2026-01-31: Shell hooks now embed a resolved SecreTTY binary path (to avoid early PATH issues) and emit optional `SECRETTY_HOOK_DEBUG` diagnostics; wrapper prints debug when that env is set. README updated; tests/build/smoke run (lint/test fail due to missing context/gotty deps).
 - 2026-01-31: PTY wrapper now captures host termios before raw mode and applies to the PTY slave so we can enable raw input earlier without contaminating child settings (reduces leaked terminal response sequences at startup). Tests/build/smoke run (lint/test still blocked by context/gotty deps).
 - 2026-01-31: PTY wrapper now sets the child process group as foreground on the PTY slave immediately after start (prevents early termios changes from being blocked, reducing leaked OSC/DSR responses). Tests/build/smoke run (lint/test still blocked by context/gotty deps).

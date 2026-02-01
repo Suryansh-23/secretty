@@ -7,6 +7,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"hash/fnv"
 	"io"
 	"sort"
 	"strconv"
@@ -19,9 +20,12 @@ import (
 
 // Redactor applies redaction actions to matched spans.
 type Redactor struct {
-	cfg  config.Config
-	rng  io.Reader
-	salt []byte
+	cfg            config.Config
+	rng            io.Reader
+	salt           []byte
+	lastGlowIndex  int
+	lastGlowBand   int
+	hasGlowHistory bool
 }
 
 // NewRedactor returns a redactor using config defaults.
@@ -85,7 +89,8 @@ func (r *Redactor) maskBytes(original []byte, match Match) []byte {
 	}
 	switch style {
 	case types.MaskStyleGlow:
-		return maskGlow(original, r.cfg.Masking.BlockChar)
+		startIndex, bandSize := r.glowParams(original)
+		return maskGlow(original, r.cfg.Masking.BlockChar, startIndex, bandSize)
 	case types.MaskStyleMorse:
 		return maskMorse(original, r.cfg.Masking.MorseMessage)
 	default:
@@ -194,15 +199,18 @@ type rgb struct {
 }
 
 var glowPalette = []rgb{
+	{r: 45, g: 212, b: 191},
 	{r: 34, g: 211, b: 238},
 	{r: 56, g: 189, b: 248},
 	{r: 96, g: 165, b: 250},
+	{r: 129, g: 140, b: 248},
 	{r: 167, g: 139, b: 250},
+	{r: 192, g: 132, b: 252},
 	{r: 244, g: 114, b: 182},
 	{r: 251, g: 113, b: 133},
 }
 
-func maskGlow(original []byte, blockChar string) []byte {
+func maskGlow(original []byte, blockChar string, startIndex int, bandSize int) []byte {
 	runes := utf8.RuneCount(original)
 	if runes <= 0 {
 		return nil
@@ -211,13 +219,40 @@ func maskGlow(original []byte, blockChar string) []byte {
 		blockChar = "\u2588"
 	}
 	var out bytes.Buffer
+	if startIndex < 0 {
+		startIndex = 0
+	}
+	if bandSize <= 0 {
+		bandSize = 1
+	}
 	for i := 0; i < runes; i++ {
-		color := glowPalette[i%len(glowPalette)]
+		color := glowPalette[(startIndex+(i/bandSize))%len(glowPalette)]
 		out.WriteString(fmt.Sprintf("\x1b[38;2;%d;%d;%dm", color.r, color.g, color.b))
 		out.WriteString(blockChar)
 	}
 	out.WriteString("\x1b[0m")
 	return out.Bytes()
+}
+
+func (r *Redactor) glowParams(original []byte) (int, int) {
+	if len(glowPalette) == 0 {
+		return 0, 1
+	}
+	hasher := fnv.New32a()
+	_, _ = hasher.Write(original)
+	sum := hasher.Sum32()
+	idx := int(sum % uint32(len(glowPalette)))
+	bandSize := int((sum>>8)%4) + 2
+	if bandSize < 2 {
+		bandSize = 2
+	}
+	if r.hasGlowHistory && idx == r.lastGlowIndex && bandSize == r.lastGlowBand && len(glowPalette) > 1 {
+		idx = (idx + 1) % len(glowPalette)
+	}
+	r.lastGlowIndex = idx
+	r.lastGlowBand = bandSize
+	r.hasGlowHistory = true
+	return idx, bandSize
 }
 
 var morseAlphabet = map[rune]string{

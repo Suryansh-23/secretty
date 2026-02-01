@@ -2,6 +2,7 @@ package redact
 
 import (
 	"bytes"
+	"hash/fnv"
 	"regexp"
 	"strings"
 	"testing"
@@ -79,6 +80,37 @@ func TestGlowMaskKeepsVisualLength(t *testing.T) {
 	}
 }
 
+func TestGlowParamsDeterministic(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Masking.Style = types.MaskStyleGlow
+	r1 := NewRedactor(cfg)
+	r2 := NewRedactor(cfg)
+
+	secret := []byte("tmdb_api_key")
+	idx1, band1 := r1.glowParams(secret)
+	idx2, band2 := r2.glowParams(secret)
+	if idx1 != idx2 || band1 != band2 {
+		t.Fatalf("expected deterministic params, got (%d,%d) and (%d,%d)", idx1, band1, idx2, band2)
+	}
+	expectedIndex, expectedBand := glowParamsForTest(secret)
+	if idx1 != expectedIndex || band1 != expectedBand {
+		t.Fatalf("params=(%d,%d) expected=(%d,%d)", idx1, band1, expectedIndex, expectedBand)
+	}
+}
+
+func TestGlowStartIndexAvoidsRepeat(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Masking.Style = types.MaskStyleGlow
+	r := NewRedactor(cfg)
+
+	secret := []byte("repeat-secret")
+	firstIdx, firstBand := r.glowParams(secret)
+	secondIdx, secondBand := r.glowParams(secret)
+	if len(glowPalette) > 1 && firstIdx == secondIdx && firstBand == secondBand {
+		t.Fatalf("expected different params, got (%d,%d) and (%d,%d)", firstIdx, firstBand, secondIdx, secondBand)
+	}
+}
+
 func TestMorseMaskMatchesLength(t *testing.T) {
 	cfg := config.DefaultConfig()
 	cfg.Masking.Style = types.MaskStyleMorse
@@ -103,4 +135,19 @@ func TestMorseMaskMatchesLength(t *testing.T) {
 func stripANSI(input string) string {
 	re := regexp.MustCompile(`\x1b\[[0-9;]*m`)
 	return re.ReplaceAllString(input, "")
+}
+
+func glowParamsForTest(input []byte) (int, int) {
+	if len(glowPalette) == 0 {
+		return 0, 1
+	}
+	hasher := fnv.New32a()
+	_, _ = hasher.Write(input)
+	sum := hasher.Sum32()
+	idx := int(sum % uint32(len(glowPalette)))
+	bandSize := int((sum>>8)%4) + 2
+	if bandSize < 2 {
+		bandSize = 2
+	}
+	return idx, bandSize
 }
