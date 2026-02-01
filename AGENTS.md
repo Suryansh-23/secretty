@@ -130,4 +130,5 @@
 - 2026-01-31: Simplified clipboard command to `secretty copy` (removed `copy last` subcommand) and updated docs/plans. Tests/build/smoke run (lint/test still blocked by context/gotty deps).
 - 2026-01-31: Shell hook generator updated to auto-exec SecreTTY from early startup files (zshenv/bash_profile/fish conf.d) with stdio bound to /dev/tty; prompt hooks removed.
 - 2026-02-01: Added tag-based release workflow + GoReleaser config with Homebrew tap publishing; README/AGENTS updated with badges and release notes.
+- 2026-02-01: Interactive redaction now tracks a plain-text tail across writes to catch secrets split across chunks; added split-write private key test.
 - 2026-02-01: Interactive redaction now detects secrets across ANSI escape boundaries per write call; added ANSI-interleaved test.
