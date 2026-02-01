@@ -65,7 +65,7 @@ rules:
     secret_type: API_KEY
     ruleset: api_keys
     regex:
-      pattern: "(?i)\\b(api[_-]?key|x-api-key|client[_-]?secret|secret[_-]?key)\\b\\s*[:=]\\s*([A-Za-z0-9_\\-]{16,})"
+      pattern: "(?i)\\b([A-Z0-9_]*API[_-]?KEY|x-api-key|client[_-]?secret|secret[_-]?key)\\b\\s*[:=]\\s*([A-Za-z0-9_\\-]{16,})"
       group: 2
     context_keywords: ["api_key", "x-api-key", "client_secret", "secret_key"]
   - name: stripe_key

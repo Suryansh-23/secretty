@@ -239,7 +239,7 @@ func DefaultConfig() Config {
 				SecretType: types.SecretAPIKey,
 				Ruleset:    "api_keys",
 				Regex: &RegexRule{
-					Pattern: "(?i)\\b(api[_-]?key|x-api-key|client[_-]?secret|secret[_-]?key)\\b\\s*[:=]\\s*([A-Za-z0-9_\\-]{16,})",
+					Pattern: "(?i)\\b([A-Z0-9_]*API[_-]?KEY|x-api-key|client[_-]?secret|secret[_-]?key)\\b\\s*[:=]\\s*([A-Za-z0-9_\\-]{16,})",
 					Group:   2,
 				},
 				ContextKeywords: []string{"api_key", "x-api-key", "client_secret", "secret_key"},
