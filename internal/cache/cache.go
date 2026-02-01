@@ -14,6 +14,7 @@ type SecretRecord struct {
 	Type      types.SecretType
 	Original  []byte
 	RuleName  string
+	Label     string
 	CreatedAt time.Time
 	ExpiresAt time.Time
 }
@@ -95,6 +96,22 @@ func (c *Cache) GetLast() (SecretRecord, bool) {
 		return rec, true
 	}
 	return SecretRecord{}, false
+}
+
+// List returns all non-expired records, most recent first.
+func (c *Cache) List() []SecretRecord {
+	if c == nil {
+		return nil
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.evictExpiredLocked()
+	out := make([]SecretRecord, 0, c.lru.Len())
+	for elem := c.lru.Front(); elem != nil; elem = elem.Next() {
+		rec := elem.Value.(SecretRecord)
+		out = append(out, rec)
+	}
+	return out
 }
 
 // Get returns a record by ID.

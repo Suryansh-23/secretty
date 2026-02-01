@@ -3,6 +3,7 @@ package redact
 import (
 	"bytes"
 	"io"
+	"regexp"
 	"time"
 	"unicode/utf8"
 
@@ -317,10 +318,12 @@ func (s *Stream) storeMatches(text []byte, matches []Match) {
 		if m.Start < 0 || m.End > len(text) || m.End <= m.Start {
 			continue
 		}
+		label := extractLabel(text, m)
 		s.cache.Put(cache.SecretRecord{
 			ID:       m.ID,
 			Type:     m.SecretType,
 			RuleName: m.RuleName,
+			Label:    label,
 			Original: append([]byte(nil), text[m.Start:m.End]...),
 		})
 	}
@@ -354,4 +357,30 @@ func (s *Stream) maybeEmitStatus(matches []Match, redacted []byte) {
 		return
 	}
 	s.lastStatus = time.Now()
+}
+
+var labelRegex = regexp.MustCompile(`^\s*([A-Za-z_][A-Za-z0-9_-]{0,63})\s*[:=]`)
+
+func extractLabel(text []byte, match Match) string {
+	if match.Start < 0 || match.Start > len(text) {
+		return ""
+	}
+	lineStart := bytes.LastIndexByte(text[:match.Start], '\n')
+	if lineStart == -1 {
+		lineStart = 0
+	} else {
+		lineStart++
+	}
+	lineEnd := bytes.IndexByte(text[match.Start:], '\n')
+	if lineEnd == -1 {
+		lineEnd = len(text)
+	} else {
+		lineEnd += match.Start
+	}
+	line := text[lineStart:lineEnd]
+	matches := labelRegex.FindSubmatch(line)
+	if len(matches) < 2 {
+		return ""
+	}
+	return string(matches[1])
 }

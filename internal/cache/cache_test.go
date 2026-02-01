@@ -50,3 +50,23 @@ func TestCacheLRUEviction(t *testing.T) {
 		t.Fatalf("expected record 2 to remain")
 	}
 }
+
+func TestCacheListMostRecentFirst(t *testing.T) {
+	c := New(3, 5*time.Second)
+	c.now = func() time.Time { return time.Unix(100, 0) }
+
+	c.Put(SecretRecord{ID: 1, Type: types.SecretEvmPrivateKey, Label: "A", Original: []byte("a")})
+	c.Put(SecretRecord{ID: 2, Type: types.SecretEvmPrivateKey, Label: "B", Original: []byte("b")})
+	c.Put(SecretRecord{ID: 3, Type: types.SecretEvmPrivateKey, Label: "C", Original: []byte("c")})
+
+	list := c.List()
+	if len(list) != 3 {
+		t.Fatalf("expected 3 records, got %d", len(list))
+	}
+	if list[0].ID != 3 || list[0].Label != "C" {
+		t.Fatalf("expected most recent record 3, got %d (%s)", list[0].ID, list[0].Label)
+	}
+	if list[2].ID != 1 {
+		t.Fatalf("expected oldest record 1, got %d", list[2].ID)
+	}
+}

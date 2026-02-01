@@ -17,16 +17,21 @@ const (
 	defaultTimeout = 2 * time.Second
 )
 
+var ErrUnsupportedOperation = errors.New("unsupported operation")
+
 type request struct {
 	Op string `json:"op"`
+	ID int    `json:"id,omitempty"`
 }
 
 type response struct {
-	OK       bool   `json:"ok"`
-	Error    string `json:"error,omitempty"`
-	ID       int    `json:"id,omitempty"`
-	RuleName string `json:"rule_name,omitempty"`
-	Type     string `json:"type,omitempty"`
+	OK       bool           `json:"ok"`
+	Error    string         `json:"error,omitempty"`
+	ID       int            `json:"id,omitempty"`
+	RuleName string         `json:"rule_name,omitempty"`
+	Type     string         `json:"type,omitempty"`
+	Label    string         `json:"label,omitempty"`
+	Records  []recordOutput `json:"records,omitempty"`
 }
 
 // CopyResponse describes the copy-last response.
@@ -34,6 +39,26 @@ type CopyResponse struct {
 	ID       int
 	RuleName string
 	Type     string
+	Label    string
+}
+
+// SecretInfo describes a cached secret for selection.
+type SecretInfo struct {
+	ID        int
+	RuleName  string
+	Type      string
+	Label     string
+	CreatedAt time.Time
+	ExpiresAt time.Time
+}
+
+type recordOutput struct {
+	ID        int    `json:"id"`
+	RuleName  string `json:"rule_name,omitempty"`
+	Type      string `json:"type,omitempty"`
+	Label     string `json:"label,omitempty"`
+	CreatedAt int64  `json:"created_at,omitempty"`
+	ExpiresAt int64  `json:"expires_at,omitempty"`
 }
 
 // Server serves IPC requests for a running session.
@@ -114,9 +139,88 @@ func CopyLast(socketPath string) (CopyResponse, error) {
 		if resp.Error == "" {
 			return CopyResponse{}, errors.New("copy failed")
 		}
+		if resp.Error == "unknown operation" {
+			return CopyResponse{}, ErrUnsupportedOperation
+		}
 		return CopyResponse{}, errors.New(resp.Error)
 	}
-	return CopyResponse{ID: resp.ID, RuleName: resp.RuleName, Type: resp.Type}, nil
+	return CopyResponse{ID: resp.ID, RuleName: resp.RuleName, Type: resp.Type, Label: resp.Label}, nil
+}
+
+// CopyByID connects to the server and requests a copy of a specific secret.
+func CopyByID(socketPath string, id int) (CopyResponse, error) {
+	conn, err := net.DialTimeout("unix", socketPath, defaultTimeout)
+	if err != nil {
+		return CopyResponse{}, err
+	}
+	defer func() { _ = conn.Close() }()
+	_ = conn.SetDeadline(time.Now().Add(defaultTimeout))
+
+	enc := json.NewEncoder(conn)
+	dec := json.NewDecoder(conn)
+	if err := enc.Encode(request{Op: "copy-id", ID: id}); err != nil {
+		return CopyResponse{}, err
+	}
+	var resp response
+	if err := dec.Decode(&resp); err != nil {
+		return CopyResponse{}, err
+	}
+	if !resp.OK {
+		if resp.Error == "" {
+			return CopyResponse{}, errors.New("copy failed")
+		}
+		if resp.Error == "unknown operation" {
+			return CopyResponse{}, ErrUnsupportedOperation
+		}
+		return CopyResponse{}, errors.New(resp.Error)
+	}
+	return CopyResponse{ID: resp.ID, RuleName: resp.RuleName, Type: resp.Type, Label: resp.Label}, nil
+}
+
+// ListSecrets returns cached secrets for selection.
+func ListSecrets(socketPath string) ([]SecretInfo, error) {
+	conn, err := net.DialTimeout("unix", socketPath, defaultTimeout)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = conn.Close() }()
+	_ = conn.SetDeadline(time.Now().Add(defaultTimeout))
+
+	enc := json.NewEncoder(conn)
+	dec := json.NewDecoder(conn)
+	if err := enc.Encode(request{Op: "list"}); err != nil {
+		return nil, err
+	}
+	var resp response
+	if err := dec.Decode(&resp); err != nil {
+		return nil, err
+	}
+	if !resp.OK {
+		if resp.Error == "" {
+			return nil, errors.New("list failed")
+		}
+		if resp.Error == "unknown operation" {
+			return nil, ErrUnsupportedOperation
+		}
+		return nil, errors.New(resp.Error)
+	}
+	out := make([]SecretInfo, 0, len(resp.Records))
+	for _, rec := range resp.Records {
+		info := SecretInfo{
+			ID:       rec.ID,
+			RuleName: rec.RuleName,
+			Type:     rec.Type,
+			Label:    rec.Label,
+		}
+		if rec.CreatedAt > 0 {
+			info.CreatedAt = time.Unix(rec.CreatedAt, 0)
+		}
+		if rec.ExpiresAt > 0 {
+			info.ExpiresAt = time.Unix(rec.ExpiresAt, 0)
+		}
+		out = append(out, info)
+	}
+	return out, nil
 }
 
 func (s *Server) serve() {
@@ -154,7 +258,41 @@ func (s *Server) handle(conn net.Conn) {
 			_ = enc.Encode(response{OK: false, Error: err.Error()})
 			return
 		}
-		_ = enc.Encode(response{OK: true, ID: rec.ID, RuleName: rec.RuleName, Type: string(rec.Type)})
+		_ = enc.Encode(response{OK: true, ID: rec.ID, RuleName: rec.RuleName, Type: string(rec.Type), Label: rec.Label})
+	case "copy-id":
+		if req.ID == 0 {
+			_ = enc.Encode(response{OK: false, Error: "missing id"})
+			return
+		}
+		rec, ok := s.cache.Get(req.ID)
+		if !ok {
+			_ = enc.Encode(response{OK: false, Error: "secret not found"})
+			return
+		}
+		if err := s.copyFn(rec.Original); err != nil {
+			_ = enc.Encode(response{OK: false, Error: err.Error()})
+			return
+		}
+		_ = enc.Encode(response{OK: true, ID: rec.ID, RuleName: rec.RuleName, Type: string(rec.Type), Label: rec.Label})
+	case "list":
+		records := s.cache.List()
+		out := make([]recordOutput, 0, len(records))
+		for _, rec := range records {
+			item := recordOutput{
+				ID:       rec.ID,
+				RuleName: rec.RuleName,
+				Type:     string(rec.Type),
+				Label:    rec.Label,
+			}
+			if !rec.CreatedAt.IsZero() {
+				item.CreatedAt = rec.CreatedAt.Unix()
+			}
+			if !rec.ExpiresAt.IsZero() {
+				item.ExpiresAt = rec.ExpiresAt.Unix()
+			}
+			out = append(out, item)
+		}
+		_ = enc.Encode(response{OK: true, Records: out})
 	default:
 		_ = enc.Encode(response{OK: false, Error: "unknown operation"})
 	}
