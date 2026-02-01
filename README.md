@@ -1,4 +1,5 @@
 # SecreTTY
+
 [![CI](https://github.com/Suryansh-23/secretty/actions/workflows/ci.yml/badge.svg)](https://github.com/Suryansh-23/secretty/actions/workflows/ci.yml)
 [![Release](https://github.com/Suryansh-23/secretty/actions/workflows/release.yml/badge.svg)](https://github.com/Suryansh-23/secretty/actions/workflows/release.yml)
 [![Homebrew](https://img.shields.io/badge/homebrew-secretty-blue)](https://github.com/Suryansh-23/homebrew-secretty)
@@ -6,11 +7,13 @@
 SecreTTY is a macOS-only PTY wrapper that redacts secrets from terminal output before they reach the screen. It is designed for live demos, screen shares, and recordings where accidental secret exposure is a risk.
 
 ## Status
+
 - MVP implementation is functional for core flows (PTY wrapper, redaction pipeline, detection, init wizard, copy, status line, doctor).
 - Strict mode and policy controls are implemented in config.
 - `copy` works for active sessions via IPC (no on-disk persistence).
 
 ## Key features
+
 - Runs shells/commands under a PTY to preserve terminal semantics.
 - Redacts secrets inline with masking or placeholders.
 - ANSI-aware tokenizer (no mutation of escape sequences).
@@ -21,12 +24,15 @@ SecreTTY is a macOS-only PTY wrapper that redacts secrets from terminal output b
 - Animated onboarding wizard with theme + logo.
 
 ## Install
+
 Homebrew tap:
+
 ```
-brew tap suryansh-23/secretty
+brew install suryansh-23/secretty/secretty
 ```
 
 ## Build
+
 Requires Go 1.24+ (tested with Go 1.25).
 
 ```
@@ -36,6 +42,7 @@ make build
 Binary output: `bin/secretty`
 
 ## Run
+
 ```
 ./bin/secretty
 ./bin/secretty shell -- zsh
@@ -46,16 +53,20 @@ Binary output: `bin/secretty`
 ./bin/secretty status
 ./bin/secretty doctor
 ```
+
 `secretty status` prints whether the current shell is wrapped (`SECRETTY_WRAPPED=1`) and whether IPC is available.
 
 ## Releases
+
 Tagged releases (`v*`) publish GitHub release assets and update the Homebrew tap via GitHub Actions + GoReleaser.
 To enable Homebrew updates, set the `HOMEBREW_TAP_GITHUB_TOKEN` secret with write access to the tap repository.
 
 ## Onboarding
+
 ```
 ./bin/secretty init
 ```
+
 The wizard shows an animated logo header and guides the user through mode, ruleset, and clipboard settings before writing `~/.config/secretty/config.yaml`.
 It now also includes redaction style selection, multi-select rulesets, and optional shell auto-wrap hook installation.
 Use `./bin/secretty init --default` to write the default config without prompts.
@@ -64,13 +75,17 @@ Shell auto-wrap installs early-start hooks (zsh: `~/.zshenv`, bash: `~/.bash_pro
 Set `SECRETTY_HOOK_DEBUG=1` to print shell hook diagnostics to stderr during startup.
 
 ## Configuration
+
 Default path:
+
 ```
 ~/.config/secretty/config.yaml
 ```
+
 You can override the path with the `SECRETTY_CONFIG` environment variable or `--config`.
 
 Example config (ASCII placeholder form):
+
 ```yaml
 version: 1
 
@@ -177,9 +192,11 @@ debug:
   enabled: false
   log_events: false
 ```
+
 Note: the default config ships with additional API key, JWT, AWS, and password rules. See `internal/config/testdata/canonical.yaml` for the full set.
 
 ## Development
+
 ```
 make fmt
 make lint
@@ -189,19 +206,23 @@ make smoke
 ```
 
 ## Reset / uninstall
+
 ```
 ./bin/secretty reset
 ```
+
 This removes the config file and deletes any SecreTTY marker blocks from common shell rc files. Manual aliases or custom edits must be removed manually.
 If you enabled shell auto-wrap, this removes the auto-wrap blocks as well.
 
 ## Limitations
+
 - macOS-only MVP.
 - `copy` only works while a SecreTTY session is running (no persistence across sessions).
 - tmux compatibility is not guaranteed.
 - Interactive shells run with unbuffered output to preserve prompt responsiveness; this can reduce cross-chunk redaction for extremely fragmented output.
 
 ## Security invariants
+
 - Never print or log original secret bytes.
 - Never mutate ANSI escape sequences.
 - Redaction must handle chunk boundaries correctly.
