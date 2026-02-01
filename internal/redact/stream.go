@@ -70,6 +70,12 @@ func NewStream(out io.Writer, cfg config.Config, detector Detector, secretCache 
 // Write processes input bytes and writes redacted output.
 func (s *Stream) Write(p []byte) (int, error) {
 	segments := s.tokenizer.Push(p)
+	if s.windowSize == 0 {
+		if err := s.writeInteractiveSegments(segments); err != nil {
+			return 0, err
+		}
+		return len(p), nil
+	}
 	for _, seg := range segments {
 		if seg.Kind == ansi.SegmentEscape {
 			s.updateAltScreen(seg.Bytes)
@@ -118,20 +124,6 @@ func (s *Stream) Flush() error {
 }
 
 func (s *Stream) processText(text []byte) error {
-	if s.windowSize == 0 {
-		s.buffer = append(s.buffer, text...)
-		emitBuf, tail := splitUTF8Tail(s.buffer)
-		if len(emitBuf) == 0 {
-			s.buffer = tail
-			return nil
-		}
-		if err := s.writeInteractive(emitBuf); err != nil {
-			return err
-		}
-		s.buffer = tail
-		return nil
-	}
-
 	s.buffer = append(s.buffer, text...)
 	emitLen := 0
 	if len(s.buffer) > s.windowSize {
@@ -164,33 +156,97 @@ func (s *Stream) processText(text []byte) error {
 	return nil
 }
 
-type textRun struct {
-	control bool
-	bytes   []byte
+type segmentInfo struct {
+	index int
+	start int
+	end   int
 }
 
-func (s *Stream) writeInteractive(buf []byte) error {
-	for _, run := range splitControlRuns(buf) {
-		if run.control {
-			if _, err := s.out.Write(run.bytes); err != nil {
+func (s *Stream) writeInteractiveSegments(segments []ansi.Segment) error {
+	var plain []byte
+	infos := make([]segmentInfo, 0, len(segments))
+	for i, seg := range segments {
+		if seg.Kind != ansi.SegmentText {
+			continue
+		}
+		start := len(plain)
+		plain = append(plain, seg.Bytes...)
+		infos = append(infos, segmentInfo{index: i, start: start, end: len(plain)})
+	}
+
+	var matches []Match
+	var matchesBySeg map[int][]Match
+	if len(plain) > 0 {
+		matches = s.detector.Find(plain)
+		matches = s.assignIDs(matches)
+		s.storeMatches(plain, matches)
+		matchesBySeg = splitMatchesBySegment(matches, infos)
+		s.logMatches(matches)
+	}
+
+	infoIdx := 0
+	for _, seg := range segments {
+		if seg.Kind == ansi.SegmentEscape {
+			s.updateAltScreen(seg.Bytes)
+			if _, err := s.out.Write(seg.Bytes); err != nil {
 				return err
 			}
 			continue
 		}
-		matches := s.detector.Find(run.bytes)
-		matches = s.assignIDs(matches)
-		s.storeMatches(run.bytes, matches)
-		redacted, err := s.redactor.Apply(run.bytes, matches)
-		if err != nil {
+		var chunk []byte
+		if infoIdx < len(infos) {
+			infoIdx++
+			segMatches := matchesBySeg[infoIdx-1]
+			if len(segMatches) == 0 {
+				chunk = seg.Bytes
+			} else {
+				redacted, err := s.redactor.Apply(seg.Bytes, segMatches)
+				if err != nil {
+					return err
+				}
+				chunk = redacted
+			}
+		} else {
+			chunk = seg.Bytes
+		}
+		if len(chunk) == 0 {
+			continue
+		}
+		if _, err := s.out.Write(chunk); err != nil {
 			return err
 		}
-		if _, err := s.out.Write(redacted); err != nil {
-			return err
-		}
-		s.logMatches(matches)
-		s.maybeEmitStatus(matches, redacted)
+		segMatches := matchesBySeg[infoIdx-1]
+		s.maybeEmitStatus(segMatches, chunk)
 	}
 	return nil
+}
+
+func splitMatchesBySegment(matches []Match, infos []segmentInfo) map[int][]Match {
+	if len(matches) == 0 || len(infos) == 0 {
+		return nil
+	}
+	out := make(map[int][]Match)
+	for _, m := range matches {
+		for i, info := range infos {
+			if m.End <= info.start || m.Start >= info.end {
+				continue
+			}
+			start := max(m.Start, info.start)
+			end := min(m.End, info.end)
+			if end <= start {
+				continue
+			}
+			out[i] = append(out[i], Match{
+				Start:      start - info.start,
+				End:        end - info.start,
+				Action:     m.Action,
+				SecretType: m.SecretType,
+				RuleName:   m.RuleName,
+				ID:         m.ID,
+			})
+		}
+	}
+	return out
 }
 
 func safeEmitLen(emitLen int, matches []Match) int {
@@ -241,33 +297,6 @@ func utf8SafePrefixLen(buf []byte, max int) int {
 	}
 	head, _ := splitUTF8Tail(buf[:max])
 	return len(head)
-}
-
-func splitControlRuns(buf []byte) []textRun {
-	if len(buf) == 0 {
-		return nil
-	}
-	var runs []textRun
-	start := 0
-	currControl := isControlByte(buf[0])
-	for i := 1; i < len(buf); i++ {
-		nextControl := isControlByte(buf[i])
-		if nextControl == currControl {
-			continue
-		}
-		runs = append(runs, textRun{control: currControl, bytes: buf[start:i]})
-		start = i
-		currControl = nextControl
-	}
-	runs = append(runs, textRun{control: currControl, bytes: buf[start:]})
-	return runs
-}
-
-func isControlByte(b byte) bool {
-	if b == '\n' || b == '\t' {
-		return false
-	}
-	return b < 0x20 || b == 0x7f
 }
 
 func filterMatches(matches []Match, emitLen int) []Match {
@@ -357,6 +386,20 @@ func (s *Stream) maybeEmitStatus(matches []Match, redacted []byte) {
 		return
 	}
 	s.lastStatus = time.Now()
+}
+
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
+}
+
+func max(a, b int) int {
+	if a > b {
+		return a
+	}
+	return b
 }
 
 var labelRegex = regexp.MustCompile(`^\s*([A-Za-z_][A-Za-z0-9_-]{0,63})\s*[:=]`)
