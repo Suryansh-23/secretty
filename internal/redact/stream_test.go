@@ -1,6 +1,8 @@
 package redact
 
-import "testing"
+import (
+	"testing"
+)
 
 func TestExtractLabel(t *testing.T) {
 	text := []byte("GITHUB_API_KEY=ghp_1234567890abcdef1234567890abcdef1234\n")
