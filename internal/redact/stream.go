@@ -23,6 +23,8 @@ type Stream struct {
 	redactor   *Redactor
 	windowSize int
 	buffer     []byte
+	plainTail  []byte
+	plainTailN int
 	cache      *cache.Cache
 	nextID     int
 	cacheOn    bool
@@ -45,6 +47,10 @@ func NewStream(out io.Writer, cfg config.Config, detector Detector, secretCache 
 	if windowSize < 0 {
 		windowSize = 32768
 	}
+	plainTailN := 0
+	if windowSize == 0 {
+		plainTailN = 8192
+	}
 	cacheOn := cfg.Overrides.CopyWithoutRender.Enabled
 	if cfg.Mode == types.ModeStrict && cfg.Strict.DisableCopyOriginal {
 		cacheOn = false
@@ -58,6 +64,7 @@ func NewStream(out io.Writer, cfg config.Config, detector Detector, secretCache 
 		redactor:        NewRedactor(cfg),
 		windowSize:      windowSize,
 		cache:           secretCache,
+		plainTailN:      plainTailN,
 		cacheOn:         cacheOn,
 		includeID:       cfg.Redaction.IncludeEventID,
 		strictMode:      cfg.Mode == types.ModeStrict,
@@ -103,6 +110,10 @@ func (s *Stream) Flush() error {
 		if _, err := s.out.Write(seg.Bytes); err != nil {
 			return err
 		}
+	}
+	if s.windowSize == 0 {
+		s.plainTail = nil
+		return nil
 	}
 	if len(s.buffer) == 0 {
 		return nil
@@ -174,14 +185,11 @@ func (s *Stream) writeInteractiveSegments(segments []ansi.Segment) error {
 		infos = append(infos, segmentInfo{index: i, start: start, end: len(plain)})
 	}
 
-	var matches []Match
 	var matchesBySeg map[int][]Match
+	var cacheMatches []Match
+	var cacheText []byte
 	if len(plain) > 0 {
-		matches = s.detector.Find(plain)
-		matches = s.assignIDs(matches)
-		s.storeMatches(plain, matches)
-		matchesBySeg = splitMatchesBySegment(matches, infos)
-		s.logMatches(matches)
+		matchesBySeg, cacheMatches, cacheText = s.findInteractiveMatches(plain, infos)
 	}
 
 	infoIdx := 0
@@ -218,7 +226,92 @@ func (s *Stream) writeInteractiveSegments(segments []ansi.Segment) error {
 		segMatches := matchesBySeg[infoIdx-1]
 		s.maybeEmitStatus(segMatches, chunk)
 	}
+	if len(cacheMatches) > 0 && len(cacheText) > 0 {
+		s.logMatches(cacheMatches)
+		s.storeMatches(cacheText, cacheMatches)
+	}
 	return nil
+}
+
+func (s *Stream) findInteractiveMatches(plain []byte, infos []segmentInfo) (map[int][]Match, []Match, []byte) {
+	tail := s.plainTail
+	combined := plain
+	if len(tail) > 0 {
+		combined = append(append([]byte(nil), tail...), plain...)
+	}
+	matches := s.detector.Find(combined)
+	if len(matches) == 0 {
+		s.updatePlainTail(combined)
+		return nil, nil, nil
+	}
+	matches = s.assignIDs(matches)
+	cacheMatches := filterMatchesOverlap(matches, len(tail), len(combined))
+	trimmed := trimMatches(matches, len(tail), len(combined))
+	var matchesBySeg map[int][]Match
+	if len(trimmed) > 0 {
+		matchesBySeg = splitMatchesBySegment(trimmed, infos)
+	}
+	s.updatePlainTail(combined)
+	return matchesBySeg, cacheMatches, combined
+}
+
+func (s *Stream) updatePlainTail(plain []byte) {
+	if s.plainTailN <= 0 {
+		s.plainTail = nil
+		return
+	}
+	if len(plain) <= s.plainTailN {
+		s.plainTail = append([]byte(nil), plain...)
+		return
+	}
+	s.plainTail = append([]byte(nil), plain[len(plain)-s.plainTailN:]...)
+}
+
+func trimMatches(matches []Match, trim int, total int) []Match {
+	if trim <= 0 {
+		return matches
+	}
+	out := matches[:0]
+	for _, m := range matches {
+		start := m.Start - trim
+		end := m.End - trim
+		if end <= 0 || start >= total-trim {
+			continue
+		}
+		if start < 0 {
+			start = 0
+		}
+		if end > total-trim {
+			end = total - trim
+		}
+		if end <= start {
+			continue
+		}
+		m.Start = start
+		m.End = end
+		out = append(out, m)
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+func filterMatchesOverlap(matches []Match, start int, end int) []Match {
+	if len(matches) == 0 {
+		return nil
+	}
+	out := matches[:0]
+	for _, m := range matches {
+		if m.End <= start || m.Start >= end {
+			continue
+		}
+		out = append(out, m)
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
 }
 
 func splitMatchesBySegment(matches []Match, infos []segmentInfo) map[int][]Match {
