@@ -16,6 +16,7 @@ func TestInteractiveAnsiAwareDetection(t *testing.T) {
 	cfg.Redaction.RollingWindowBytes = 0
 	cfg.Masking.Style = types.MaskStyleBlock
 	cfg.Masking.BlockChar = "#"
+	cfg.Rulesets.APIKeys.Enabled = true
 
 	out := &bytes.Buffer{}
 	stream := redact.NewStream(out, cfg, detect.NewEngine(cfg), nil, nil)
