@@ -245,7 +245,7 @@ func (s *Stream) findInteractiveMatches(plain []byte, infos []segmentInfo) (map[
 		return nil, nil, nil
 	}
 	matches = s.assignIDs(matches)
-	cacheMatches := filterMatchesOverlap(matches, len(tail), len(combined))
+	cacheMatches := filterMatchesNewBytes(matches, len(tail))
 	trimmed := trimMatches(matches, len(tail), len(combined))
 	var matchesBySeg map[int][]Match
 	if len(trimmed) > 0 {
@@ -297,13 +297,13 @@ func trimMatches(matches []Match, trim int, total int) []Match {
 	return out
 }
 
-func filterMatchesOverlap(matches []Match, start int, end int) []Match {
+func filterMatchesNewBytes(matches []Match, start int) []Match {
 	if len(matches) == 0 {
 		return nil
 	}
 	out := matches[:0]
 	for _, m := range matches {
-		if m.End <= start || m.Start >= end {
+		if m.End <= start {
 			continue
 		}
 		out = append(out, m)
