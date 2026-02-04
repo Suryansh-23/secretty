@@ -474,6 +474,14 @@ func forwardSignals(proc *os.Process, ptmx *os.File, resize bool) func() {
 					// Best-effort resize; ignore errors.
 					_ = pty.InheritSize(os.Stdin, ptmx)
 				}
+			case syscall.SIGINT, syscall.SIGQUIT, syscall.SIGTSTP:
+				if ptmx != nil {
+					if b, ok := controlByteForSignal(sig); ok {
+						_, _ = ptmx.Write([]byte{b})
+						continue
+					}
+				}
+				_ = proc.Signal(sig)
 			default:
 				_ = proc.Signal(sig)
 			}
@@ -484,6 +492,19 @@ func forwardSignals(proc *os.Process, ptmx *os.File, resize bool) func() {
 		signal.Stop(ch)
 		close(ch)
 		<-done
+	}
+}
+
+func controlByteForSignal(sig os.Signal) (byte, bool) {
+	switch sig {
+	case syscall.SIGINT:
+		return 0x03, true
+	case syscall.SIGQUIT:
+		return 0x1c, true
+	case syscall.SIGTSTP:
+		return 0x1a, true
+	default:
+		return 0, false
 	}
 }
 
