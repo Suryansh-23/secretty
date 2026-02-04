@@ -3,7 +3,6 @@ package clipboard
 import (
 	"errors"
 	"fmt"
-	"os"
 	"os/exec"
 	"strings"
 )
@@ -73,15 +72,4 @@ func hasCommand(backend Backend) bool {
 	}
 	_, err := lookPath(string(backend))
 	return err == nil
-}
-
-func isWayland() bool {
-	if v := strings.TrimSpace(os.Getenv("XDG_SESSION_TYPE")); strings.EqualFold(v, "wayland") {
-		return true
-	}
-	return strings.TrimSpace(os.Getenv("WAYLAND_DISPLAY")) != ""
-}
-
-func isX11() bool {
-	return strings.TrimSpace(os.Getenv("DISPLAY")) != ""
 }
