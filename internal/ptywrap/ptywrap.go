@@ -211,6 +211,9 @@ func terminfoDirs(env []string) []string {
 		dirs = append(dirs, filepath.Join(home, ".terminfo"))
 	}
 	dirs = append(dirs,
+		"/lib/terminfo",
+		"/usr/lib/terminfo",
+		"/etc/terminfo",
 		"/usr/share/terminfo",
 		"/usr/local/share/terminfo",
 		"/opt/homebrew/share/terminfo",
@@ -438,25 +441,6 @@ func makeRawWithSignals(fd int) (func(), error) {
 	return func() { _ = term.Restore(fd, state) }, nil
 }
 
-func getTermios(fd int) (*unix.Termios, error) {
-	termios, err := unix.IoctlGetTermios(fd, unix.TIOCGETA)
-	if err != nil {
-		if errors.Is(err, unix.ENOTTY) || errors.Is(err, syscall.ENOTTY) || errors.Is(err, syscall.EOPNOTSUPP) || errors.Is(err, syscall.ENOTSUP) {
-			return nil, nil
-		}
-		return nil, err
-	}
-	copy := *termios
-	return &copy, nil
-}
-
-func setTermios(fd int, termios *unix.Termios) error {
-	if termios == nil {
-		return nil
-	}
-	return unix.IoctlSetTermios(fd, unix.TIOCSETA, termios)
-}
-
 func forwardSignals(proc *os.Process, ptmx *os.File, resize bool) func() {
 	if proc == nil {
 		return func() {}
@@ -523,24 +507,6 @@ func setForegroundProcessGroup(ptmx *os.File, proc *os.Process, logger *debug.Lo
 		if logger != nil {
 			logger.Infof("ptywrap: set_fg_pgrp_failed=%v", err)
 		}
-	}
-}
-
-func flushPendingInput(tty *os.File, logger *debug.Logger) {
-	if tty == nil {
-		return
-	}
-	if err := unix.IoctlSetInt(int(tty.Fd()), syscall.TIOCFLUSH, syscall.TCIFLUSH); err != nil {
-		if errors.Is(err, unix.ENOTTY) || errors.Is(err, syscall.ENOTTY) || errors.Is(err, syscall.EOPNOTSUPP) || errors.Is(err, syscall.ENOTSUP) {
-			return
-		}
-		if logger != nil {
-			logger.Infof("ptywrap: tcflush_failed=%v", err)
-		}
-		return
-	}
-	if logger != nil {
-		logger.Infof("ptywrap: tcflush=ok")
 	}
 }
 
