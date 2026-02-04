@@ -194,7 +194,7 @@ func DefaultConfig() Config {
 				Enabled:        true,
 				TTLSeconds:     30,
 				RequireConfirm: true,
-				Backend:        "pbcopy",
+				Backend:        "auto",
 			},
 		},
 		Rulesets: Rulesets{
@@ -480,6 +480,8 @@ func (c Config) Validate() error {
 	}
 	if c.Overrides.CopyWithoutRender.Backend == "" {
 		errs = append(errs, "overrides.copy_without_render.backend is required")
+	} else if !validClipboardBackend(c.Overrides.CopyWithoutRender.Backend) {
+		errs = append(errs, "overrides.copy_without_render.backend must be one of: auto, pbcopy, wl-copy, xclip, xsel, none")
 	}
 	for i, rule := range c.Rules {
 		if rule.Name == "" {
@@ -585,6 +587,15 @@ func validRuleType(ruleType RuleType) bool {
 func validRuleset(name string) bool {
 	switch name {
 	case "web3", "api_keys", "auth_tokens", "cloud", "passwords":
+		return true
+	default:
+		return false
+	}
+}
+
+func validClipboardBackend(backend string) bool {
+	switch strings.ToLower(strings.TrimSpace(backend)) {
+	case "auto", "pbcopy", "wl-copy", "xclip", "xsel", "none":
 		return true
 	default:
 		return false
