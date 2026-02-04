@@ -397,6 +397,9 @@ func DefaultPath() (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("resolve home dir: %w", err)
 	}
+	if xdg := strings.TrimSpace(os.Getenv("XDG_CONFIG_HOME")); xdg != "" {
+		return filepath.Join(xdg, defaultConfigRelPath), nil
+	}
 	return filepath.Join(home, ".config", defaultConfigRelPath), nil
 }
 

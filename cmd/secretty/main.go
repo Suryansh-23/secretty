@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"time"
@@ -706,11 +707,7 @@ func detectShellOptions() []shellOption {
 	if err != nil {
 		return nil
 	}
-	candidates := []shellOption{
-		{Name: "zsh", Kind: "zsh", Path: filepath.Join(home, ".zshenv")},
-		{Name: "bash", Kind: "bash", Path: filepath.Join(home, ".bash_profile")},
-		{Name: "fish", Kind: "fish", Path: filepath.Join(home, ".config", "fish", "conf.d", "secretty.fish")},
-	}
+	candidates := defaultShellCandidates(home)
 	current := filepath.Base(os.Getenv("SHELL"))
 	etcShells := readEtcShells()
 	var out []shellOption
@@ -723,6 +720,22 @@ func detectShellOptions() []shellOption {
 		return candidates
 	}
 	return out
+}
+
+func defaultShellCandidates(home string) []shellOption {
+	fishPath := filepath.Join(home, ".config", "fish", "conf.d", "secretty.fish")
+	if runtime.GOOS == "linux" {
+		return []shellOption{
+			{Name: "bash", Kind: "bash", Path: filepath.Join(home, ".bashrc")},
+			{Name: "zsh", Kind: "zsh", Path: filepath.Join(home, ".zshrc")},
+			{Name: "fish", Kind: "fish", Path: fishPath},
+		}
+	}
+	return []shellOption{
+		{Name: "zsh", Kind: "zsh", Path: filepath.Join(home, ".zshenv")},
+		{Name: "bash", Kind: "bash", Path: filepath.Join(home, ".bash_profile")},
+		{Name: "fish", Kind: "fish", Path: fishPath},
+	}
 }
 
 func defaultShellSelections(options []shellOption) []string {
