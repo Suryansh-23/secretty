@@ -133,3 +133,4 @@
 - 2026-02-01: Interactive redaction now tracks a plain-text tail across writes to catch secrets split across chunks; added split-write private key test.
 - 2026-02-01: Interactive redaction now detects secrets across ANSI escape boundaries per write call; added ANSI-interleaved test.
 - 2026-02-01: Cache now avoids duplicate entries when the same secret spans interactive write boundaries.
+- 2026-02-01: PTY wrapper now writes Ctrl signal bytes (SIGINT/SIGQUIT/SIGTSTP) into PTY to restore job control for wrapped shells.
