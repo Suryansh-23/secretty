@@ -508,7 +508,7 @@ func copyLast(state *appState) (copyResult, error) {
 	if !ok {
 		return copyResult{}, errors.New("no secrets cached")
 	}
-	if err := clipboard.CopyBytes(record.Original); err != nil {
+	if err := clipboard.CopyBytes(state.cfg.Overrides.CopyWithoutRender.Backend, record.Original); err != nil {
 		return copyResult{}, err
 	}
 	return copyResult{ID: record.ID, Label: record.Label, RuleName: record.RuleName, Type: record.Type}, nil
@@ -529,7 +529,7 @@ func copyByID(state *appState, id int) (copyResult, error) {
 	if !ok {
 		return copyResult{}, errors.New("secret not found")
 	}
-	if err := clipboard.CopyBytes(record.Original); err != nil {
+	if err := clipboard.CopyBytes(state.cfg.Overrides.CopyWithoutRender.Backend, record.Original); err != nil {
 		return copyResult{}, err
 	}
 	return copyResult{ID: record.ID, Label: record.Label, RuleName: record.RuleName, Type: record.Type}, nil
@@ -894,7 +894,9 @@ func startIPCServer(cfg config.Config, cache *cache.Cache) (string, func(), erro
 	if err != nil {
 		return "", nil, err
 	}
-	server, err := ipc.StartServer(socketPath, cache, nil)
+	server, err := ipc.StartServer(socketPath, cache, func(payload []byte) error {
+		return clipboard.CopyBytes(cfg.Overrides.CopyWithoutRender.Backend, payload)
+	})
 	if err != nil {
 		_ = os.Remove(socketPath)
 		return "", nil, err
