@@ -300,6 +300,10 @@ overrides:
     require_confirm: true
     backend: pbcopy           # pbcopy (macOS) only in MVP
 
+allowlist:
+  enabled: false
+  commands: []               # optional list of command names or globs
+
 rulesets:
   web3:
     enabled: true
@@ -352,6 +356,8 @@ Implemented using `huh?` prompts (terminal forms). citeturn0search1turn
    - `alias safe=secretty`
 6) Configure override:
    - enable copy-without-render (default ON), TTL
+7) Optional allowlist:
+   - select commands that bypass redaction
 
 ### 11.2 Self-test content rules
 - Self-test strings are synthetic; do not use real keys.

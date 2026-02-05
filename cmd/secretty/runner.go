@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"strings"
@@ -10,6 +11,7 @@ import (
 
 	"golang.org/x/term"
 
+	"github.com/suryansh-23/secretty/internal/allowlist"
 	"github.com/suryansh-23/secretty/internal/cache"
 	"github.com/suryansh-23/secretty/internal/clipboard"
 	"github.com/suryansh-23/secretty/internal/config"
@@ -56,6 +58,7 @@ func runWithPTY(ctx context.Context, cfg config.Config, cfgPath string, command 
 		stdoutTTY := term.IsTerminal(int(os.Stdout.Fd()))
 		fmt.Fprintf(os.Stderr, "secretty wrapper: interactive=%t stdin_tty=%t stdout_tty=%t cfg=%s cmd=%s\n", interactive, stdinTTY, stdoutTTY, cfgPath, strings.Join(command.Args, " "))
 	}
+	bypass := shouldBypassRedaction(cfg, command, logger)
 	if os.Getenv("SECRETTY_WRAPPED") == "" {
 		command.Env = append(command.Env, "SECRETTY_WRAPPED=1")
 	}
@@ -63,8 +66,12 @@ func runWithPTY(ctx context.Context, cfg config.Config, cfgPath string, command 
 		command.Env = append(command.Env, "SECRETTY_CONFIG="+cfgPath)
 	}
 	cleanup := func() {}
-	if cache != nil {
-		socketPath, closeFn, err := startIPCServer(cfg, cache)
+	cacheForRun := cache
+	if bypass {
+		cacheForRun = nil
+	}
+	if cacheForRun != nil {
+		socketPath, closeFn, err := startIPCServer(cfg, cacheForRun)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, "secretty: copy cache unavailable:", err)
 		} else if socketPath != "" {
@@ -75,14 +82,17 @@ func runWithPTY(ctx context.Context, cfg config.Config, cfgPath string, command 
 		}
 	}
 	defer cleanup()
-	if interactive {
+	if interactive && !bypass {
 		cfg.Redaction.RollingWindowBytes = 0
 	}
-	detector := detect.NewEngine(cfg)
-	stream := redact.NewStream(os.Stdout, cfg, detector, cache, logger)
+	var output io.Writer = os.Stdout
+	if !bypass {
+		detector := detect.NewEngine(cfg)
+		output = redact.NewStream(os.Stdout, cfg, detector, cacheForRun, logger)
+	}
 	exitCode, err := ptywrap.RunCommand(ctx, command, ptywrap.Options{
 		RawMode: true,
-		Output:  stream,
+		Output:  output,
 		Logger:  logger,
 	})
 	if err != nil {
@@ -107,4 +117,37 @@ func ensureCache(existing *cache.Cache, cfg config.Config) *cache.Cache {
 	}
 	existing.SetTTL(ttl)
 	return existing
+}
+
+func shouldBypassRedaction(cfg config.Config, command *exec.Cmd, logger *debug.Logger) bool {
+	if !cfg.Allowlist.Enabled || len(cfg.Allowlist.Commands) == 0 || command == nil {
+		return false
+	}
+	argv0 := command.Path
+	if len(command.Args) > 0 {
+		argv0 = command.Args[0]
+	}
+	resolved := resolveCommandPath(argv0)
+	matched, err := allowlist.Match(cfg.Allowlist.Commands, argv0, resolved)
+	if err != nil {
+		if logger != nil {
+			logger.Infof("allowlist: invalid pattern: %v", err)
+		}
+		return false
+	}
+	if matched && logger != nil {
+		logger.Infof("allowlist: bypassing redaction for %s (resolved=%s)", argv0, resolved)
+	}
+	return matched
+}
+
+func resolveCommandPath(argv0 string) string {
+	if strings.TrimSpace(argv0) == "" {
+		return ""
+	}
+	resolved, err := exec.LookPath(argv0)
+	if err != nil {
+		return argv0
+	}
+	return resolved
 }

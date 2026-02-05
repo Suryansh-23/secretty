@@ -32,6 +32,10 @@ overrides:
     require_confirm: true
     backend: auto
 
+allowlist:
+  enabled: false
+  commands: []
+
 rulesets:
   web3:
     enabled: true

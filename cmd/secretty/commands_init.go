@@ -57,6 +57,9 @@ func newInitCmd(cfgPath *string) *cobra.Command {
 			copyEnabled := cfg.Overrides.CopyWithoutRender.Enabled
 			requireConfirm := cfg.Overrides.CopyWithoutRender.RequireConfirm
 			ttlStr := strconv.Itoa(cfg.Overrides.CopyWithoutRender.TTLSeconds)
+			allowlistEnabled := cfg.Allowlist.Enabled
+			selectedAllowlist := defaultAllowlistSelections(cfg)
+			allowlistCustom := ""
 			overwrite := false
 
 			envNote := huh.NewNote().
@@ -112,6 +115,17 @@ func newInitCmd(cfgPath *string) *cobra.Command {
 						return nil
 					}),
 				).WithHideFunc(func() bool { return !copyEnabled }),
+				huh.NewGroup(
+					huh.NewConfirm().Title("Skip redaction for selected commands?").Value(&allowlistEnabled),
+				),
+				huh.NewGroup(
+					huh.NewMultiSelect[string]().Title("Allowlist commands").Value(&selectedAllowlist).Options(
+						allowlistOptions()...,
+					),
+				).WithHideFunc(func() bool { return !allowlistEnabled }),
+				huh.NewGroup(
+					huh.NewInput().Title("Custom allowlist entries (comma-separated)").Value(&allowlistCustom),
+				).WithHideFunc(func() bool { return !allowlistEnabled }),
 			).WithTheme(ui.Theme())
 
 			if err := runAnimatedForm(form); err != nil {
@@ -133,6 +147,8 @@ func newInitCmd(cfgPath *string) *cobra.Command {
 				}
 				cfg.Overrides.CopyWithoutRender.TTLSeconds = parsedTTL
 			}
+			cfg.Allowlist.Enabled = allowlistEnabled
+			cfg.Allowlist.Commands = buildAllowlistCommands(selectedAllowlist, allowlistCustom)
 			if cfg.Mode == types.ModeStrict {
 				cfg.Strict.NoReveal = true
 			}
@@ -190,6 +206,77 @@ func applyRulesetSelections(cfg *config.Config, selected []string) {
 	cfg.Rulesets.AuthTokens.Enabled = set["auth_tokens"]
 	cfg.Rulesets.Cloud.Enabled = set["cloud"]
 	cfg.Rulesets.Passwords.Enabled = set["passwords"]
+}
+
+func allowlistOptions() []huh.Option[string] {
+	options := make([]huh.Option[string], 0, len(allowlistSuggestions()))
+	for _, name := range allowlistSuggestions() {
+		options = append(options, huh.NewOption(name, name))
+	}
+	return options
+}
+
+func allowlistSuggestions() []string {
+	return []string{
+		"ssh",
+		"vim",
+		"less",
+		"more",
+		"man",
+		"top",
+		"htop",
+		"tail",
+		"cat",
+		"grep",
+		"kubectl*",
+		"terraform",
+		"aws",
+	}
+}
+
+func defaultAllowlistSelections(cfg config.Config) []string {
+	if len(cfg.Allowlist.Commands) == 0 {
+		return nil
+	}
+	set := make(map[string]struct{}, len(cfg.Allowlist.Commands))
+	for _, entry := range cfg.Allowlist.Commands {
+		set[strings.TrimSpace(entry)] = struct{}{}
+	}
+	out := make([]string, 0, len(set))
+	for _, suggestion := range allowlistSuggestions() {
+		if _, ok := set[suggestion]; ok {
+			out = append(out, suggestion)
+		}
+	}
+	return out
+}
+
+func buildAllowlistCommands(selected []string, custom string) []string {
+	seen := make(map[string]struct{}, len(selected))
+	out := make([]string, 0, len(selected))
+	for _, entry := range selected {
+		trimmed := strings.TrimSpace(entry)
+		if trimmed == "" {
+			continue
+		}
+		if _, ok := seen[trimmed]; ok {
+			continue
+		}
+		seen[trimmed] = struct{}{}
+		out = append(out, trimmed)
+	}
+	for _, entry := range strings.Split(custom, ",") {
+		trimmed := strings.TrimSpace(entry)
+		if trimmed == "" {
+			continue
+		}
+		if _, ok := seen[trimmed]; ok {
+			continue
+		}
+		seen[trimmed] = struct{}{}
+		out = append(out, trimmed)
+	}
+	return out
 }
 
 func runSelfTest(cfg config.Config) error {

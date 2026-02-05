@@ -73,3 +73,15 @@ func TestParseAppliesDefaults(t *testing.T) {
 		t.Fatalf("masking.style not default")
 	}
 }
+
+func TestValidationRejectsInvalidAllowlistEntry(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.Allowlist.Commands = []string{""}
+	if err := cfg.Validate(); err == nil {
+		t.Fatalf("expected validation error for empty allowlist entry")
+	}
+	cfg.Allowlist.Commands = []string{"["}
+	if err := cfg.Validate(); err == nil {
+		t.Fatalf("expected validation error for invalid pattern")
+	}
+}
