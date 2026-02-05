@@ -91,7 +91,7 @@ To enable Homebrew updates, set the `HOMEBREW_TAP_GITHUB_TOKEN` secret with writ
 ./bin/secretty init
 ```
 
-The wizard shows an animated logo header and guides the user through mode, ruleset, and clipboard settings before writing `~/.config/secretty/config.yaml`.
+The wizard shows an animated logo header and guides the user through mode, ruleset, clipboard settings, and optional shell startup banner preferences before writing `~/.config/secretty/config.yaml`.
 It now also includes redaction style selection, multi-select rulesets, and optional shell auto-wrap hook installation.
 Use `./bin/secretty init --default` to write the default config without prompts.
 Set `SECRETTY_TERM=xterm-256color` if your terminal's `$TERM` value does not have a working terminfo entry.
@@ -152,6 +152,9 @@ overrides:
 allowlist:
   enabled: false
   commands: []
+
+ui:
+  shell_banner: false
 
 rulesets:
   web3:

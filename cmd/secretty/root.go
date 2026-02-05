@@ -9,6 +9,7 @@ import (
 	"github.com/suryansh-23/secretty/internal/config"
 	"github.com/suryansh-23/secretty/internal/debug"
 	"github.com/suryansh-23/secretty/internal/types"
+	"github.com/suryansh-23/secretty/internal/ui"
 )
 
 func newRootCmd(state *appState) *cobra.Command {
@@ -62,6 +63,13 @@ func newRootCmd(state *appState) *cobra.Command {
 	rootCmd.AddCommand(newStatusCmd(state))
 	rootCmd.AddCommand(newDoctorCmd(state))
 	rootCmd.AddCommand(newVersionCmd())
+
+	defaultHelp := rootCmd.HelpFunc()
+	rootCmd.SetHelpFunc(func(cmd *cobra.Command, args []string) {
+		fmt.Fprintln(cmd.OutOrStdout(), ui.LogoStatic(currentBadge()))
+		fmt.Fprintln(cmd.OutOrStdout())
+		defaultHelp(cmd, args)
+	})
 
 	return rootCmd
 }

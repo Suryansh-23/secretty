@@ -6,6 +6,8 @@ import (
 	"strings"
 
 	"github.com/spf13/cobra"
+
+	"github.com/suryansh-23/secretty/internal/ui"
 )
 
 var (
@@ -20,6 +22,8 @@ func newVersionCmd() *cobra.Command {
 		Short: "Print version information",
 		Args:  cobra.NoArgs,
 		Run: func(cmd *cobra.Command, args []string) {
+			fmt.Fprintln(cmd.OutOrStdout(), ui.LogoStatic(currentBadge()))
+			fmt.Fprintln(cmd.OutOrStdout())
 			ver, rev, built := resolveVersion()
 			fmt.Printf("secretty %s\n", ver)
 			if rev != "" && rev != "unknown" {

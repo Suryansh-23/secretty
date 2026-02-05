@@ -36,6 +36,9 @@ allowlist:
   enabled: false
   commands: []
 
+ui:
+  shell_banner: false
+
 rulesets:
   web3:
     enabled: true

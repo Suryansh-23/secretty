@@ -21,6 +21,7 @@ import (
 	"github.com/suryansh-23/secretty/internal/ptywrap"
 	"github.com/suryansh-23/secretty/internal/redact"
 	"github.com/suryansh-23/secretty/internal/types"
+	"github.com/suryansh-23/secretty/internal/ui"
 )
 
 func startIPCServer(cfg config.Config, cache *cache.Cache) (string, func(), error) {
@@ -85,6 +86,9 @@ func runWithPTY(ctx context.Context, cfg config.Config, cfgPath string, command 
 	if interactive && !bypass {
 		cfg.Redaction.RollingWindowBytes = 0
 	}
+	if interactive && os.Getenv("SECRETTY_WRAPPED") == "" && cfg.UI.ShellBanner {
+		showWrapBanner(currentBadge())
+	}
 	var output io.Writer = os.Stdout
 	if !bypass {
 		detector := detect.NewEngine(cfg)
@@ -102,6 +106,26 @@ func runWithPTY(ctx context.Context, cfg config.Config, cfgPath string, command 
 		return &exitCodeError{code: exitCode}
 	}
 	return nil
+}
+
+func showWrapBanner(badge ui.Badge) {
+	if os.Getenv("TERM") == "dumb" {
+		return
+	}
+	if !term.IsTerminal(int(os.Stderr.Fd())) {
+		return
+	}
+	palette := ui.ShuffledPalette()
+	frame := ui.LogoFrame(0, palette, badge) + "\n" + ui.WrapIndicatorLine(0, palette)
+	lines := strings.Split(frame, "\n")
+	for idx, line := range lines {
+		if idx > 0 {
+			fmt.Fprint(os.Stderr, "\n")
+		}
+		fmt.Fprint(os.Stderr, "\r\x1b[2K")
+		fmt.Fprint(os.Stderr, strings.TrimRight(line, " "))
+	}
+	fmt.Fprintln(os.Stderr)
 }
 
 func ensureCache(existing *cache.Cache, cfg config.Config) *cache.Cache {

@@ -38,12 +38,18 @@ type Config struct {
 	TypedDetectors []TypedDetector `yaml:"typed_detectors"`
 
 	Debug Debug `yaml:"debug"`
+	UI    UI    `yaml:"ui"`
 }
 
 // Debug controls sanitized logging.
 type Debug struct {
 	Enabled   bool `yaml:"enabled"`
 	LogEvents bool `yaml:"log_events"`
+}
+
+// UI controls optional UX elements.
+type UI struct {
+	ShellBanner bool `yaml:"shell_banner"`
 }
 
 // Strict controls strict-mode behavior.
@@ -375,6 +381,9 @@ func DefaultConfig() Config {
 				Ruleset:         "web3",
 				ContextKeywords: []string{"private_key", "--private-key", "secret", "sk="},
 			},
+		},
+		UI: UI{
+			ShellBanner: false,
 		},
 		Debug: Debug{
 			Enabled:   false,

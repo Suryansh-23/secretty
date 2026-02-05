@@ -57,6 +57,7 @@ func newInitCmd(cfgPath *string) *cobra.Command {
 			copyEnabled := cfg.Overrides.CopyWithoutRender.Enabled
 			requireConfirm := cfg.Overrides.CopyWithoutRender.RequireConfirm
 			ttlStr := strconv.Itoa(cfg.Overrides.CopyWithoutRender.TTLSeconds)
+			shellBanner := cfg.UI.ShellBanner
 			allowlistEnabled := cfg.Allowlist.Enabled
 			selectedAllowlist := defaultAllowlistSelections(cfg)
 			allowlistCustom := ""
@@ -101,6 +102,9 @@ func newInitCmd(cfgPath *string) *cobra.Command {
 					),
 				).WithHideFunc(func() bool { return len(shellOptions) == 0 }),
 				huh.NewGroup(
+					huh.NewConfirm().Title("Show banner when starting a protected shell?").Value(&shellBanner),
+				),
+				huh.NewGroup(
 					huh.NewConfirm().Title("Enable copy-without-render?").Value(&copyEnabled),
 				),
 				huh.NewGroup(
@@ -140,6 +144,7 @@ func newInitCmd(cfgPath *string) *cobra.Command {
 			applyRulesetSelections(&cfg, selectedRulesets)
 			cfg.Overrides.CopyWithoutRender.Enabled = copyEnabled
 			cfg.Overrides.CopyWithoutRender.RequireConfirm = requireConfirm
+			cfg.UI.ShellBanner = shellBanner
 			if copyEnabled {
 				parsedTTL, err := strconv.Atoi(strings.TrimSpace(ttlStr))
 				if err != nil {

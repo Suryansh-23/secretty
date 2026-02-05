@@ -41,6 +41,9 @@ func TestParseCanonicalConfig(t *testing.T) {
 	if cfg.Overrides.CopyWithoutRender.Backend != "auto" {
 		t.Fatalf("backend = %q", cfg.Overrides.CopyWithoutRender.Backend)
 	}
+	if cfg.UI.ShellBanner {
+		t.Fatalf("ui.shell_banner = true, want false")
+	}
 	if len(cfg.Rules) != 10 {
 		t.Fatalf("rules count = %d", len(cfg.Rules))
 	}
