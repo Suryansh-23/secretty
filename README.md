@@ -4,7 +4,7 @@
 [![Release](https://github.com/Suryansh-23/secretty/actions/workflows/release.yml/badge.svg)](https://github.com/Suryansh-23/secretty/actions/workflows/release.yml)
 [![Homebrew](https://img.shields.io/badge/homebrew-secretty-blue)](https://github.com/Suryansh-23/homebrew-secretty)
 
-SecreTTY is a macOS-only PTY wrapper that redacts secrets from terminal output before they reach the screen. It is designed for live demos, screen shares, and recordings where accidental secret exposure is a risk.
+SecreTTY is a macOS + Linux PTY wrapper that redacts secrets from terminal output before they reach the screen. It is designed for live demos, screen shares, and recordings where accidental secret exposure is a risk.
 
 ## Status
 
@@ -19,16 +19,24 @@ SecreTTY is a macOS-only PTY wrapper that redacts secrets from terminal output b
 - ANSI-aware tokenizer (no mutation of escape sequences).
 - Rulesets for Web3, API keys, auth tokens, cloud credentials, and passwords.
 - Optional status line with rate limiting.
-- Copy-without-render to clipboard (macOS `pbcopy`) inside active sessions.
+- Copy-without-render to clipboard (`pbcopy` on macOS; `wl-copy`/`xclip`/`xsel` on Linux) inside active sessions.
 - Multiple mask styles (classic blocks, glow blocks, Morse code).
 - Animated onboarding wizard with theme + logo.
 
 ## Install
 
-Homebrew tap:
+macOS (Homebrew):
 
 ```
 brew install suryansh-23/secretty/secretty
+```
+
+Linux (tar.gz from GitHub Releases):
+
+```
+curl -L -o secretty.tar.gz https://github.com/Suryansh-23/secretty/releases/latest/download/secretty_<version>_linux_<arch>.tar.gz
+tar -xzf secretty.tar.gz
+sudo mv secretty /usr/local/bin/secretty
 ```
 
 ## Build
@@ -49,12 +57,14 @@ Binary output: `bin/secretty`
 ./bin/secretty run -- printf "PRIVATE_KEY=0x<64hex>\n"
 ./bin/secretty init
 ./bin/secretty reset
-./bin/secretty copy
+./bin/secretty copy last
+./bin/secretty copy pick
 ./bin/secretty status
 ./bin/secretty doctor
 ```
 
 `secretty status` prints whether the current shell is wrapped (`SECRETTY_WRAPPED=1`) and whether IPC is available.
+`secretty copy` requires a subcommand (`last` or `pick`).
 
 ## Releases
 
@@ -71,7 +81,10 @@ The wizard shows an animated logo header and guides the user through mode, rules
 It now also includes redaction style selection, multi-select rulesets, and optional shell auto-wrap hook installation.
 Use `./bin/secretty init --default` to write the default config without prompts.
 Set `SECRETTY_TERM=xterm-256color` if your terminal's `$TERM` value does not have a working terminfo entry.
-Shell auto-wrap installs early-start hooks (zsh: `~/.zshenv`, bash: `~/.bash_profile`, fish: `~/.config/fish/conf.d/secretty.fish`) and always `exec`s the wrapper so prompt themes initialize inside SecreTTY.
+Shell auto-wrap installs early-start hooks:
+- macOS: zsh `~/.zshenv`, bash `~/.bash_profile`, fish `~/.config/fish/conf.d/secretty.fish`
+- Linux: zsh `~/.zshrc`, bash `~/.bashrc`, fish `~/.config/fish/conf.d/secretty.fish`
+The hook always `exec`s the wrapper so prompt themes initialize inside SecreTTY.
 Set `SECRETTY_HOOK_DEBUG=1` to print shell hook diagnostics to stderr during startup.
 
 ## Configuration
@@ -79,7 +92,8 @@ Set `SECRETTY_HOOK_DEBUG=1` to print shell hook diagnostics to stderr during sta
 Default path:
 
 ```
-~/.config/secretty/config.yaml
+macOS: ~/.config/secretty/config.yaml
+Linux: $XDG_CONFIG_HOME/secretty/config.yaml (falls back to ~/.config/secretty/config.yaml)
 ```
 
 You can override the path with the `SECRETTY_CONFIG` environment variable or `--config`.
@@ -119,7 +133,7 @@ overrides:
     enabled: true
     ttl_seconds: 30
     require_confirm: true
-    backend: pbcopy
+    backend: auto
 
 rulesets:
   web3:
@@ -195,6 +209,8 @@ debug:
 
 Note: the default config ships with additional API key, JWT, AWS, and password rules. See `internal/config/testdata/canonical.yaml` for the full set.
 
+Linux clipboard support requires `wl-copy` (Wayland) or `xclip`/`xsel` (X11). If you are in a headless session, set `overrides.copy_without_render.enabled=false` or `backend: none`.
+
 ## Development
 
 ```
@@ -216,8 +232,9 @@ If you enabled shell auto-wrap, this removes the auto-wrap blocks as well.
 
 ## Limitations
 
-- macOS-only MVP.
+- macOS + Linux only (Windows/WSL not yet supported).
 - `copy` only works while a SecreTTY session is running (no persistence across sessions).
+- Linux `copy` requires a working display server and clipboard tool (`wl-copy`, `xclip`, or `xsel`).
 - tmux compatibility is not guaranteed.
 - Interactive shells run with unbuffered output to preserve prompt responsiveness; this can reduce cross-chunk redaction for extremely fragmented output.
 

@@ -38,6 +38,9 @@ func TestParseCanonicalConfig(t *testing.T) {
 	if cfg.Overrides.CopyWithoutRender.TTLSeconds != 30 {
 		t.Fatalf("ttl_seconds = %d", cfg.Overrides.CopyWithoutRender.TTLSeconds)
 	}
+	if cfg.Overrides.CopyWithoutRender.Backend != "auto" {
+		t.Fatalf("backend = %q", cfg.Overrides.CopyWithoutRender.Backend)
+	}
 	if len(cfg.Rules) != 10 {
 		t.Fatalf("rules count = %d", len(cfg.Rules))
 	}

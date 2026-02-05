@@ -6,12 +6,16 @@ on:
 
 jobs:
   build-test:
-    runs-on: macos-latest
+    strategy:
+      matrix:
+        os: [macos-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
           go-version: '1.24.x'
       - run: go mod tidy
-      - run: go test ./...
-      - run: go vet ./...
+      - run: make lint
+      - run: make test
+      - run: make vet

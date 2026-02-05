@@ -74,7 +74,9 @@ func StartServer(path string, cache *cache.Cache, copyFn func([]byte) error) (*S
 		return nil, errors.New("no cache available")
 	}
 	if copyFn == nil {
-		copyFn = clipboard.CopyBytes
+		copyFn = func(payload []byte) error {
+			return clipboard.CopyBytes(string(clipboard.BackendAuto), payload)
+		}
 	}
 	listener, err := net.Listen("unix", path)
 	if err != nil {
