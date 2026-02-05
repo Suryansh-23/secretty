@@ -39,6 +39,20 @@ tar -xzf secretty.tar.gz
 sudo mv secretty /usr/local/bin/secretty
 ```
 
+Linux (deb/rpm from GitHub Releases):
+
+```
+curl -L -o secretty.deb https://github.com/Suryansh-23/secretty/releases/latest/download/secretty_<version>_linux_<arch>.deb
+sudo dpkg -i secretty.deb
+```
+
+```
+curl -L -o secretty.rpm https://github.com/Suryansh-23/secretty/releases/latest/download/secretty_<version>_linux_<arch>.rpm
+sudo rpm -i secretty.rpm
+```
+
+Replace `<version>` with the release tag (for example `v0.4.0`) and `<arch>` with `amd64` or `arm64`.
+
 ## Build
 
 Requires Go 1.24+ (tested with Go 1.25).
@@ -207,8 +221,6 @@ debug:
 ```
 
 Note: the default config ships with additional API key, JWT, AWS, and password rules. See `internal/config/testdata/canonical.yaml` for the full set.
-Linux clipboard support requires `wl-copy` (Wayland) or `xclip`/`xsel` (X11). If you are in a headless session, set `overrides.copy_without_render.enabled=false` or `backend: none`.
-
 Linux clipboard support requires `wl-copy` (Wayland) or `xclip`/`xsel` (X11). If you are in a headless session, set `overrides.copy_without_render.enabled=false` or `backend: none`.
 
 ## Development

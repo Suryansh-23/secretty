@@ -47,3 +47,18 @@ brews:
         source ~/.zshrc
         source ~/.bashrc
         source ~/.config/fish/config.fish
+
+nfpms:
+  - id: packages
+    package_name: secretty
+    builds:
+      - secretty
+    homepage: https://github.com/Suryansh-23/secretty
+    maintainer: Suryansh-23 <noreply@github.com>
+    description: macOS + Linux PTY wrapper that redacts secrets from terminal output
+    license: MIT
+    bindir: /usr/bin
+    file_name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    formats:
+      - deb
+      - rpm
