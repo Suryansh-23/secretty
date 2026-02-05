@@ -29,7 +29,7 @@ release:
 brews:
   - name: secretty
     homepage: https://github.com/Suryansh-23/secretty
-    description: macOS PTY wrapper that redacts secrets from terminal output
+    description: macOS + Linux PTY wrapper that redacts secrets from terminal output
     license: MIT
     repository:
       owner: Suryansh-23
