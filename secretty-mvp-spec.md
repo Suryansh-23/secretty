@@ -1,4 +1,4 @@
-# SecreTTY — Technical MVP Spec (macOS)  
+# SecreTTY — Technical MVP Spec (macOS + Linux)  
 **Version:** v0.1 (MVP)  
 **Last updated:** 2026-01-18  
 **Primary use-case:** prevent **visual leaks** of secrets in terminal output during screen-share / live demos.
@@ -11,7 +11,7 @@
 1) **Redact secrets in terminal output before they reach the user’s screen.**  
 2) **Preserve TTY semantics** (colors, cursor motion, REPLs, full-screen TUIs) by running the child under a PTY. The `creack/pty` `Start` helper assigns a tty to stdin/stdout/stderr and starts the process in a new session with a controlling terminal. citeturn0search0turn0search16  
 3) Be **terminal-emulator agnostic**: works with Ghostty/iTerm2/WezTerm/kitty/Terminal.app (since SecreTTY sits between the terminal and the child process).  
-4) **macOS-only** for MVP.  
+4) **macOS + Linux** for MVP.  
 5) **Always-on “Strict recording” mode** inside SecreTTY sessions (redaction enabled by default).  
 6) **Local-only**: no network calls; no telemetry.  
 7) **Simple UX**: minimal commands; zero configuration required to get value.
@@ -298,7 +298,7 @@ overrides:
     enabled: true
     ttl_seconds: 30
     require_confirm: true
-    backend: pbcopy           # pbcopy (macOS) only in MVP
+    backend: auto             # pbcopy (macOS) / wl-copy/xclip/xsel (Linux)
 
 allowlist:
   enabled: false

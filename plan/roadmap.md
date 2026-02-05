@@ -19,4 +19,4 @@ This roadmap expands the MVP spec into staged, feature-based implementation work
 - Preserve PTY semantics and ANSI correctness above all.
 - Never print or log original secrets.
 - Prefer small, reversible changes with concrete tests.
-- Maintain macOS-only scope for MVP.
+- Maintain macOS + Linux scope for MVP.

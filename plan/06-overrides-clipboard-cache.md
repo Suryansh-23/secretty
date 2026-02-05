@@ -24,7 +24,7 @@ func (c *Cache) GetLast() (SecretRecord, bool) { /* most recent */ }
 ```
 
 ## Clipboard integration
-- macOS-only via `pbcopy`.
+- macOS via `pbcopy`, Linux via `wl-copy`/`xclip`/`xsel`.
 - Ensure copy operation never prints original to stdout/stderr.
 - Optionally require confirmation (`require_confirm`).
 

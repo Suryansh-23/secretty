@@ -1,7 +1,7 @@
 # Stage 0 - consolidated spec + principles
 
 ## Mission
-SecreTTY is a macOS-only PTY wrapper that redacts secrets from terminal output before it reaches the screen. The MVP prioritizes live demo safety and terminal correctness over breadth of detectors or UI.
+SecreTTY is a macOS + Linux PTY wrapper that redacts secrets from terminal output before it reaches the screen. The MVP prioritizes live demo safety and terminal correctness over breadth of detectors or UI.
 
 ## Scope (hard requirements)
 - Redact secrets in terminal output before display.
@@ -91,7 +91,7 @@ SecreTTY is a macOS-only PTY wrapper that redacts secrets from terminal output b
 - Run `rg -n \"rolling_window_bytes|ttl_seconds|rate_limit_ms|allow_bare_64hex|stable_hash_token\" plan/` to ensure critical defaults appear in the plan docs.
 
 ## Deliverables
-- A working macOS CLI (`secretty`) with spec-defined commands.
+- A working macOS + Linux CLI (`secretty`) with spec-defined commands.
 - Verified smoke tests and fixtures.
 - Homebrew-friendly packaging.
 - Documentation and self-test wizard.

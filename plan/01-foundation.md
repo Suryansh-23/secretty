@@ -69,7 +69,7 @@ overrides:
     enabled: true
     ttl_seconds: 30
     require_confirm: true
-    backend: pbcopy           # pbcopy (macOS) only in MVP
+    backend: auto             # pbcopy (macOS) / wl-copy/xclip/xsel (Linux)
 
 rulesets:
   web3:

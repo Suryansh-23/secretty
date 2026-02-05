@@ -2,7 +2,7 @@
 
 ## Overview
 - This repo contains the product/technical spec for **SecreTTY**, a macOS + Linux PTY wrapper that redacts secrets from terminal output during screen-share/demo use.
-- The Go implementation covers the MVP flows (PTY wrapper, redaction pipeline, detectors, init wizard, clipboard copy, status line); the authoritative requirements source is still `secretty-mvp-spec.md` (macOS-focused).
+- The Go implementation covers the MVP flows (PTY wrapper, redaction pipeline, detectors, init wizard, clipboard copy, status line); the authoritative requirements source is still `secretty-mvp-spec.md` (macOS + Linux-focused).
 
 ## Key files
 - `secretty-mvp-spec.md`: Full MVP product/technical specification (CLI contract, redaction pipeline, config schema, architecture).

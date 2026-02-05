@@ -20,6 +20,7 @@
 - Run a smoke test with timeout: `timeout 10s ./secretty --help` (use `gtimeout` on macOS if needed).
 - Run `secretty run -- printf \"0x<64hex>\\n\"` and confirm output redaction.
 - Verify the Homebrew formula installs and the binary runs `--help` on a clean macOS environment.
+- Verify Linux tarball/deb/rpm installs and the binary runs `--help` on a clean Linux environment.
 
 ## Tooling
 - `make build`: compile binary.
@@ -29,13 +30,14 @@
 
 ## Packaging
 - Homebrew tap formula for `secretty`.
-- Install path: `/opt/homebrew/bin/secretty` (macOS).
+- Install path: `/opt/homebrew/bin/secretty` (macOS), `/usr/local/bin/secretty` (Linux tarball), `/usr/bin/secretty` (deb/rpm).
 - Ensure no network calls in runtime code.
 
 ## Acceptance criteria
 - All tests pass locally.
 - Lint passes.
 - Brew install works on a clean macOS machine.
+- Linux tarball/deb/rpm install works on a clean Linux machine.
 
 ## Risks
 - CI may be needed for consistent Go versions. Mitigation: add a CI config later if required.
