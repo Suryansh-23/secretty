@@ -63,8 +63,7 @@ Binary output: `bin/secretty`
 ./bin/secretty doctor
 ```
 
-`secretty status` prints whether the current shell is wrapped (`SECRETTY_WRAPPED=1`) and whether IPC is available.
-`secretty copy` requires a subcommand (`last` or `pick`).
+`secretty status` prints whether the current shell is wrapped (`SECRETTY_WRAPPED=1`) and whether IPC is available. `secretty copy` requires a subcommand (`last` or `pick`).
 
 ## Releases
 
@@ -208,6 +207,7 @@ debug:
 ```
 
 Note: the default config ships with additional API key, JWT, AWS, and password rules. See `internal/config/testdata/canonical.yaml` for the full set.
+Linux clipboard support requires `wl-copy` (Wayland) or `xclip`/`xsel` (X11). If you are in a headless session, set `overrides.copy_without_render.enabled=false` or `backend: none`.
 
 Linux clipboard support requires `wl-copy` (Wayland) or `xclip`/`xsel` (X11). If you are in a headless session, set `overrides.copy_without_render.enabled=false` or `backend: none`.
 
@@ -234,7 +234,7 @@ If you enabled shell auto-wrap, this removes the auto-wrap blocks as well.
 
 - macOS + Linux only (Windows/WSL not yet supported).
 - `copy` only works while a SecreTTY session is running (no persistence across sessions).
-- Linux `copy` requires a working display server and clipboard tool (`wl-copy`, `xclip`, or `xsel`).
+- Linux `copy` requires a display server and a clipboard tool (`wl-copy`, `xclip`, or `xsel`).
 - tmux compatibility is not guaranteed.
 - Interactive shells run with unbuffered output to preserve prompt responsiveness; this can reduce cross-chunk redaction for extremely fragmented output.
 
