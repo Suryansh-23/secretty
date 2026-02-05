@@ -16,6 +16,9 @@ jobs:
         with:
           go-version: '1.24.x'
       - run: go mod tidy
-      - run: make lint
+      - uses: golangci/golangci-lint-action@v6
+        with:
+          version: v1.62.2
+          args: --timeout=2m ./cmd/... ./internal/...
       - run: make test
       - run: make vet

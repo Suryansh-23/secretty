@@ -1,9 +1,8 @@
 BINARY := secretty
 CMD := ./cmd/secretty
-GO_PACKAGES := $(shell go list -f '{{.ImportPath}}' ./... 2>/dev/null | grep -v '/context/' || true)
-GO_DIRS := $(shell go list -f '{{.Dir}}' ./... 2>/dev/null | sed 's|^$(CURDIR)/||' | grep -v '^context/' || true)
+GO_PACKAGES := ./cmd/... ./internal/...
 
-.PHONY: build test lint fmt smoke vet
+.PHONY: build test lint fmt vet smoke
 
 build:
 	go build -o bin/$(BINARY) $(CMD)
@@ -12,7 +11,7 @@ test:
 	go test $(GO_PACKAGES)
 
 lint:
-	golangci-lint run $(GO_DIRS)
+	golangci-lint run $(GO_PACKAGES)
 
 vet:
 	go vet $(GO_PACKAGES)
