@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path"
 	"path/filepath"
 	"strings"
 
@@ -30,6 +31,7 @@ type Config struct {
 	Redaction Redaction `yaml:"redaction"`
 	Masking   Masking   `yaml:"masking"`
 	Overrides Overrides `yaml:"overrides"`
+	Allowlist Allowlist `yaml:"allowlist"`
 
 	Rulesets       Rulesets        `yaml:"rulesets"`
 	Rules          []Rule          `yaml:"rules"`
@@ -83,6 +85,12 @@ type Masking struct {
 // Overrides configures opt-in behavior.
 type Overrides struct {
 	CopyWithoutRender CopyWithoutRender `yaml:"copy_without_render"`
+}
+
+// Allowlist configures redaction bypass for selected commands.
+type Allowlist struct {
+	Enabled  bool     `yaml:"enabled"`
+	Commands []string `yaml:"commands,omitempty"`
 }
 
 // CopyWithoutRender configures clipboard behavior.
@@ -196,6 +204,10 @@ func DefaultConfig() Config {
 				RequireConfirm: true,
 				Backend:        "auto",
 			},
+		},
+		Allowlist: Allowlist{
+			Enabled:  false,
+			Commands: nil,
 		},
 		Rulesets: Rulesets{
 			Web3: Web3Ruleset{
@@ -482,6 +494,16 @@ func (c Config) Validate() error {
 		errs = append(errs, "overrides.copy_without_render.backend is required")
 	} else if !validClipboardBackend(c.Overrides.CopyWithoutRender.Backend) {
 		errs = append(errs, "overrides.copy_without_render.backend must be one of: auto, pbcopy, wl-copy, xclip, xsel, none")
+	}
+	for i, entry := range c.Allowlist.Commands {
+		trimmed := strings.TrimSpace(entry)
+		if trimmed == "" {
+			errs = append(errs, fmt.Sprintf("allowlist.commands[%d] must not be empty", i))
+			continue
+		}
+		if _, err := path.Match(trimmed, "dummy"); err != nil {
+			errs = append(errs, fmt.Sprintf("allowlist.commands[%d] has invalid pattern: %v", i, err))
+		}
 	}
 	for i, rule := range c.Rules {
 		if rule.Name == "" {
