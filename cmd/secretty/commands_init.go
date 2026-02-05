@@ -127,7 +127,10 @@ func newInitCmd(cfgPath *string) *cobra.Command {
 			cfg.Overrides.CopyWithoutRender.Enabled = copyEnabled
 			cfg.Overrides.CopyWithoutRender.RequireConfirm = requireConfirm
 			if copyEnabled {
-				parsedTTL, _ := strconv.Atoi(strings.TrimSpace(ttlStr))
+				parsedTTL, err := strconv.Atoi(strings.TrimSpace(ttlStr))
+				if err != nil {
+					return fmt.Errorf("parse copy ttl: %w", err)
+				}
 				cfg.Overrides.CopyWithoutRender.TTLSeconds = parsedTTL
 			}
 			if cfg.Mode == types.ModeStrict {

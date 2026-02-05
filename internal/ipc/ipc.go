@@ -82,7 +82,10 @@ func StartServer(path string, cache *cache.Cache, copyFn func([]byte) error) (*S
 	if err != nil {
 		return nil, err
 	}
-	_ = os.Chmod(path, 0o600)
+	if err := os.Chmod(path, 0o600); err != nil {
+		_ = listener.Close()
+		return nil, err
+	}
 	server := &Server{listener: listener, cache: cache, copyFn: copyFn}
 	go server.serve()
 	return server, nil
@@ -126,7 +129,9 @@ func CopyLast(socketPath string) (CopyResponse, error) {
 		return CopyResponse{}, err
 	}
 	defer func() { _ = conn.Close() }()
-	_ = conn.SetDeadline(time.Now().Add(defaultTimeout))
+	if err := conn.SetDeadline(time.Now().Add(defaultTimeout)); err != nil {
+		return CopyResponse{}, err
+	}
 
 	enc := json.NewEncoder(conn)
 	dec := json.NewDecoder(conn)
@@ -156,7 +161,9 @@ func CopyByID(socketPath string, id int) (CopyResponse, error) {
 		return CopyResponse{}, err
 	}
 	defer func() { _ = conn.Close() }()
-	_ = conn.SetDeadline(time.Now().Add(defaultTimeout))
+	if err := conn.SetDeadline(time.Now().Add(defaultTimeout)); err != nil {
+		return CopyResponse{}, err
+	}
 
 	enc := json.NewEncoder(conn)
 	dec := json.NewDecoder(conn)
@@ -186,7 +193,9 @@ func ListSecrets(socketPath string) ([]SecretInfo, error) {
 		return nil, err
 	}
 	defer func() { _ = conn.Close() }()
-	_ = conn.SetDeadline(time.Now().Add(defaultTimeout))
+	if err := conn.SetDeadline(time.Now().Add(defaultTimeout)); err != nil {
+		return nil, err
+	}
 
 	enc := json.NewEncoder(conn)
 	dec := json.NewDecoder(conn)
@@ -240,42 +249,60 @@ func (s *Server) serve() {
 
 func (s *Server) handle(conn net.Conn) {
 	defer func() { _ = conn.Close() }()
-	_ = conn.SetDeadline(time.Now().Add(defaultTimeout))
+	if err := conn.SetDeadline(time.Now().Add(defaultTimeout)); err != nil {
+		return
+	}
 
 	dec := json.NewDecoder(conn)
 	enc := json.NewEncoder(conn)
 	var req request
 	if err := dec.Decode(&req); err != nil {
-		_ = enc.Encode(response{OK: false, Error: "invalid request"})
+		if err := enc.Encode(response{OK: false, Error: "invalid request"}); err != nil {
+			return
+		}
 		return
 	}
 	switch req.Op {
 	case "copy-last":
 		rec, ok := s.cache.GetLast()
 		if !ok {
-			_ = enc.Encode(response{OK: false, Error: "no secrets cached"})
+			if err := enc.Encode(response{OK: false, Error: "no secrets cached"}); err != nil {
+				return
+			}
 			return
 		}
 		if err := s.copyFn(rec.Original); err != nil {
-			_ = enc.Encode(response{OK: false, Error: err.Error()})
+			if err := enc.Encode(response{OK: false, Error: err.Error()}); err != nil {
+				return
+			}
 			return
 		}
-		_ = enc.Encode(response{OK: true, ID: rec.ID, RuleName: rec.RuleName, Type: string(rec.Type), Label: rec.Label})
+		if err := enc.Encode(response{OK: true, ID: rec.ID, RuleName: rec.RuleName, Type: string(rec.Type), Label: rec.Label}); err != nil {
+			return
+		}
 	case "copy-id":
 		if req.ID == 0 {
-			_ = enc.Encode(response{OK: false, Error: "missing id"})
+			if err := enc.Encode(response{OK: false, Error: "missing id"}); err != nil {
+				return
+			}
 			return
 		}
 		rec, ok := s.cache.Get(req.ID)
 		if !ok {
-			_ = enc.Encode(response{OK: false, Error: "secret not found"})
+			if err := enc.Encode(response{OK: false, Error: "secret not found"}); err != nil {
+				return
+			}
 			return
 		}
 		if err := s.copyFn(rec.Original); err != nil {
-			_ = enc.Encode(response{OK: false, Error: err.Error()})
+			if err := enc.Encode(response{OK: false, Error: err.Error()}); err != nil {
+				return
+			}
 			return
 		}
-		_ = enc.Encode(response{OK: true, ID: rec.ID, RuleName: rec.RuleName, Type: string(rec.Type), Label: rec.Label})
+		if err := enc.Encode(response{OK: true, ID: rec.ID, RuleName: rec.RuleName, Type: string(rec.Type), Label: rec.Label}); err != nil {
+			return
+		}
 	case "list":
 		records := s.cache.List()
 		out := make([]recordOutput, 0, len(records))
@@ -294,8 +321,12 @@ func (s *Server) handle(conn net.Conn) {
 			}
 			out = append(out, item)
 		}
-		_ = enc.Encode(response{OK: true, Records: out})
+		if err := enc.Encode(response{OK: true, Records: out}); err != nil {
+			return
+		}
 	default:
-		_ = enc.Encode(response{OK: false, Error: "unknown operation"})
+		if err := enc.Encode(response{OK: false, Error: "unknown operation"}); err != nil {
+			return
+		}
 	}
 }

@@ -86,7 +86,10 @@ func (c *Cache) GetLast() (SecretRecord, bool) {
 	defer c.mu.Unlock()
 	c.evictExpiredLocked()
 	for elem := c.lru.Front(); elem != nil; elem = elem.Next() {
-		rec := elem.Value.(SecretRecord)
+		rec, ok := elem.Value.(SecretRecord)
+		if !ok {
+			continue
+		}
 		if !rec.ExpiresAt.IsZero() && c.now().After(rec.ExpiresAt) {
 			c.lru.Remove(elem)
 			delete(c.byID, rec.ID)
@@ -108,7 +111,10 @@ func (c *Cache) List() []SecretRecord {
 	c.evictExpiredLocked()
 	out := make([]SecretRecord, 0, c.lru.Len())
 	for elem := c.lru.Front(); elem != nil; elem = elem.Next() {
-		rec := elem.Value.(SecretRecord)
+		rec, ok := elem.Value.(SecretRecord)
+		if !ok {
+			continue
+		}
 		out = append(out, rec)
 	}
 	return out
@@ -125,7 +131,10 @@ func (c *Cache) Get(id int) (SecretRecord, bool) {
 	if !ok {
 		return SecretRecord{}, false
 	}
-	rec := elem.Value.(SecretRecord)
+	rec, ok := elem.Value.(SecretRecord)
+	if !ok {
+		return SecretRecord{}, false
+	}
 	if !rec.ExpiresAt.IsZero() && c.now().After(rec.ExpiresAt) {
 		c.lru.Remove(elem)
 		delete(c.byID, rec.ID)
@@ -166,7 +175,11 @@ func (c *Cache) evictLocked() {
 		if back == nil {
 			return
 		}
-		rec := back.Value.(SecretRecord)
+		rec, ok := back.Value.(SecretRecord)
+		if !ok {
+			c.lru.Remove(back)
+			continue
+		}
 		delete(c.byID, rec.ID)
 		c.lru.Remove(back)
 	}
@@ -176,7 +189,12 @@ func (c *Cache) evictExpiredLocked() {
 	now := c.now()
 	for elem := c.lru.Back(); elem != nil; {
 		prev := elem.Prev()
-		rec := elem.Value.(SecretRecord)
+		rec, ok := elem.Value.(SecretRecord)
+		if !ok {
+			c.lru.Remove(elem)
+			elem = prev
+			continue
+		}
 		if !rec.ExpiresAt.IsZero() && now.After(rec.ExpiresAt) {
 			delete(c.byID, rec.ID)
 			c.lru.Remove(elem)

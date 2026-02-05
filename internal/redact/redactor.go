@@ -33,7 +33,11 @@ func NewRedactor(cfg config.Config) *Redactor {
 	r := &Redactor{cfg: cfg, rng: rand.Reader}
 	if cfg.Masking.StableHashToken.Enabled {
 		r.salt = make([]byte, 32)
-		_, _ = io.ReadFull(r.rng, r.salt)
+		if _, err := io.ReadFull(r.rng, r.salt); err != nil {
+			for i := range r.salt {
+				r.salt[i] = 0
+			}
+		}
 	}
 	return r
 }
@@ -115,7 +119,11 @@ func (r *Redactor) placeholder(match Match) []byte {
 func (r *Redactor) stableHashToken(match Match) []byte {
 	if len(r.salt) == 0 {
 		r.salt = make([]byte, 32)
-		_, _ = io.ReadFull(r.rng, r.salt)
+		if _, err := io.ReadFull(r.rng, r.salt); err != nil {
+			for i := range r.salt {
+				r.salt[i] = 0
+			}
+		}
 	}
 	h := hmac.New(sha256.New, r.salt)
 	_, _ = h.Write([]byte(match.RuleName))
@@ -181,7 +189,9 @@ func isHexDigit(b byte) bool {
 
 func randomHexNibble(rng io.Reader, uppercase bool) byte {
 	buf := []byte{0}
-	_, _ = io.ReadFull(rng, buf)
+	if _, err := io.ReadFull(rng, buf); err != nil {
+		buf[0] = 0
+	}
 	idx := int(buf[0]) % 16
 	var digits string
 	if uppercase {

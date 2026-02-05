@@ -36,7 +36,9 @@ func newCopyCmd(state *appState) *cobra.Command {
 		Short: "Copy redacted secrets without rendering",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			_ = cmd.Help()
+			if err := cmd.Help(); err != nil {
+				return err
+			}
 			return errors.New("use `secretty copy last` or `secretty copy pick`")
 		},
 	}

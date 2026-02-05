@@ -60,9 +60,11 @@ func RunCommand(ctx context.Context, cmd *exec.Cmd, opts Options) (int, error) {
 	defer func() { _ = ptmx.Close() }()
 
 	if isTTY {
-		_ = pty.InheritSize(os.Stdin, ptmx)
+		if err := pty.InheritSize(os.Stdin, ptmx); err != nil && opts.Logger != nil {
+			opts.Logger.Infof("ptywrap: inherit_size_failed=%v", err)
+		}
 	}
-	stopSignals := forwardSignals(cmd.Process, ptmx, isTTY)
+	stopSignals := forwardSignals(cmd.Process, ptmx, isTTY, opts.Logger)
 	defer stopSignals()
 
 	ctx, cancel := context.WithCancel(ctx)
@@ -75,7 +77,9 @@ func RunCommand(ctx context.Context, cmd *exec.Cmd, opts Options) (int, error) {
 	waitErr := cmd.Wait()
 	cancel()
 	_ = ptmx.Close()
-	_ = closeOutput(out)
+	if err := closeOutput(out); err != nil && opts.Logger != nil {
+		opts.Logger.Infof("ptywrap: close_output_failed=%v", err)
+	}
 	<-errCh
 
 	if waitErr == nil {
@@ -275,18 +279,38 @@ func copyInput(ctx context.Context, dst *os.File, src io.Reader, logger *debug.L
 					filtered = append(filtered, filter.Flush()...)
 				}
 				if len(filtered) > 0 {
-					_, _ = dst.Write(filtered)
+					if _, err := dst.Write(filtered); err != nil {
+						if logger != nil {
+							logger.Infof("ptywrap: stdin_write_error=%v", err)
+						}
+						return
+					}
 				}
 			} else {
 				if pending := filter.Flush(); len(pending) > 0 {
-					_, _ = dst.Write(pending)
+					if _, err := dst.Write(pending); err != nil {
+						if logger != nil {
+							logger.Infof("ptywrap: stdin_write_error=%v", err)
+						}
+						return
+					}
 				}
-				_, _ = dst.Write(chunk)
+				if _, err := dst.Write(chunk); err != nil {
+					if logger != nil {
+						logger.Infof("ptywrap: stdin_write_error=%v", err)
+					}
+					return
+				}
 			}
 		}
 		if err != nil {
 			if pending := filter.Flush(); len(pending) > 0 {
-				_, _ = dst.Write(pending)
+				if _, writeErr := dst.Write(pending); writeErr != nil {
+					if logger != nil {
+						logger.Infof("ptywrap: stdin_write_error=%v", writeErr)
+					}
+					return
+				}
 			}
 			if logger != nil && !errors.Is(err, io.EOF) {
 				logger.Infof("ptywrap: stdin_copy_error=%v", err)
@@ -314,21 +338,29 @@ func makeRawWithSignals(fd int) (func(), error) {
 	}
 	termios, err := getTermios(fd)
 	if err != nil {
-		_ = term.Restore(fd, state)
+		if restoreErr := term.Restore(fd, state); restoreErr != nil {
+			return nil, fmt.Errorf("restore terminal: %w", restoreErr)
+		}
 		return nil, err
 	}
 	if termios != nil {
 		// Re-enable signals so Ctrl+C/Ctrl+Z still generate SIGINT/SIGTSTP.
 		termios.Lflag |= unix.ISIG
 		if err := setTermios(fd, termios); err != nil {
-			_ = term.Restore(fd, state)
+			if restoreErr := term.Restore(fd, state); restoreErr != nil {
+				return nil, fmt.Errorf("restore terminal: %w", restoreErr)
+			}
 			return nil, fmt.Errorf("set termios: %w", err)
 		}
 	}
-	return func() { _ = term.Restore(fd, state) }, nil
+	return func() {
+		if err := term.Restore(fd, state); err != nil {
+			_ = err
+		}
+	}, nil
 }
 
-func forwardSignals(proc *os.Process, ptmx *os.File, resize bool) func() {
+func forwardSignals(proc *os.Process, ptmx *os.File, resize bool, logger *debug.Logger) func() {
 	if proc == nil {
 		return func() {}
 	}
@@ -343,18 +375,26 @@ func forwardSignals(proc *os.Process, ptmx *os.File, resize bool) func() {
 			case syscall.SIGWINCH:
 				if resize {
 					// Best-effort resize; ignore errors.
-					_ = pty.InheritSize(os.Stdin, ptmx)
+					if err := pty.InheritSize(os.Stdin, ptmx); err != nil && logger != nil {
+						logger.Infof("ptywrap: resize_failed=%v", err)
+					}
 				}
 			case syscall.SIGINT, syscall.SIGQUIT, syscall.SIGTSTP:
 				if ptmx != nil {
 					if b, ok := controlByteForSignal(sig); ok {
-						_, _ = ptmx.Write([]byte{b})
+						if _, err := ptmx.Write([]byte{b}); err != nil && logger != nil {
+							logger.Infof("ptywrap: signal_write_failed=%v", err)
+						}
 						continue
 					}
 				}
-				_ = proc.Signal(sig)
+				if err := proc.Signal(sig); err != nil && logger != nil {
+					logger.Infof("ptywrap: signal_forward_failed=%v", err)
+				}
 			default:
-				_ = proc.Signal(sig)
+				if err := proc.Signal(sig); err != nil && logger != nil {
+					logger.Infof("ptywrap: signal_forward_failed=%v", err)
+				}
 			}
 		}
 	}()

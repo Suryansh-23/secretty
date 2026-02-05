@@ -98,10 +98,12 @@ func installShellHooks(selected []string, options []shellOption, configPath stri
 }
 
 func resolveSecrettyBinary() string {
-	exe, _ := os.Executable()
-	exe = filepath.Clean(exe)
-	if isExecutableFile(exe) && isStableExecutablePath(exe) {
-		return exe
+	exe := ""
+	if resolved, err := os.Executable(); err == nil {
+		exe = filepath.Clean(resolved)
+		if isExecutableFile(exe) && isStableExecutablePath(exe) {
+			return exe
+		}
 	}
 	if resolved, err := exec.LookPath("secretty"); err == nil {
 		resolved = filepath.Clean(resolved)
