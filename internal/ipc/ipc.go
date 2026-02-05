@@ -1,6 +1,7 @@
 package ipc
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -32,6 +33,7 @@ type response struct {
 	Type     string         `json:"type,omitempty"`
 	Label    string         `json:"label,omitempty"`
 	Records  []recordOutput `json:"records,omitempty"`
+	Payload  string         `json:"payload,omitempty"`
 }
 
 // CopyResponse describes the copy-last response.
@@ -154,6 +156,42 @@ func CopyLast(socketPath string) (CopyResponse, error) {
 	return CopyResponse{ID: resp.ID, RuleName: resp.RuleName, Type: resp.Type, Label: resp.Label}, nil
 }
 
+// FetchLast connects to the server and requests the last secret payload.
+func FetchLast(socketPath string) ([]byte, CopyResponse, error) {
+	conn, err := net.DialTimeout("unix", socketPath, defaultTimeout)
+	if err != nil {
+		return nil, CopyResponse{}, err
+	}
+	defer func() { _ = conn.Close() }()
+	if err := conn.SetDeadline(time.Now().Add(defaultTimeout)); err != nil {
+		return nil, CopyResponse{}, err
+	}
+
+	enc := json.NewEncoder(conn)
+	dec := json.NewDecoder(conn)
+	if err := enc.Encode(request{Op: "fetch-last"}); err != nil {
+		return nil, CopyResponse{}, err
+	}
+	var resp response
+	if err := dec.Decode(&resp); err != nil {
+		return nil, CopyResponse{}, err
+	}
+	if !resp.OK {
+		if resp.Error == "" {
+			return nil, CopyResponse{}, errors.New("copy failed")
+		}
+		if resp.Error == "unknown operation" {
+			return nil, CopyResponse{}, ErrUnsupportedOperation
+		}
+		return nil, CopyResponse{}, errors.New(resp.Error)
+	}
+	payload, err := base64.StdEncoding.DecodeString(resp.Payload)
+	if err != nil {
+		return nil, CopyResponse{}, fmt.Errorf("decode payload: %w", err)
+	}
+	return payload, CopyResponse{ID: resp.ID, RuleName: resp.RuleName, Type: resp.Type, Label: resp.Label}, nil
+}
+
 // CopyByID connects to the server and requests a copy of a specific secret.
 func CopyByID(socketPath string, id int) (CopyResponse, error) {
 	conn, err := net.DialTimeout("unix", socketPath, defaultTimeout)
@@ -184,6 +222,42 @@ func CopyByID(socketPath string, id int) (CopyResponse, error) {
 		return CopyResponse{}, errors.New(resp.Error)
 	}
 	return CopyResponse{ID: resp.ID, RuleName: resp.RuleName, Type: resp.Type, Label: resp.Label}, nil
+}
+
+// FetchByID connects to the server and requests a secret payload by ID.
+func FetchByID(socketPath string, id int) ([]byte, CopyResponse, error) {
+	conn, err := net.DialTimeout("unix", socketPath, defaultTimeout)
+	if err != nil {
+		return nil, CopyResponse{}, err
+	}
+	defer func() { _ = conn.Close() }()
+	if err := conn.SetDeadline(time.Now().Add(defaultTimeout)); err != nil {
+		return nil, CopyResponse{}, err
+	}
+
+	enc := json.NewEncoder(conn)
+	dec := json.NewDecoder(conn)
+	if err := enc.Encode(request{Op: "fetch-id", ID: id}); err != nil {
+		return nil, CopyResponse{}, err
+	}
+	var resp response
+	if err := dec.Decode(&resp); err != nil {
+		return nil, CopyResponse{}, err
+	}
+	if !resp.OK {
+		if resp.Error == "" {
+			return nil, CopyResponse{}, errors.New("copy failed")
+		}
+		if resp.Error == "unknown operation" {
+			return nil, CopyResponse{}, ErrUnsupportedOperation
+		}
+		return nil, CopyResponse{}, errors.New(resp.Error)
+	}
+	payload, err := base64.StdEncoding.DecodeString(resp.Payload)
+	if err != nil {
+		return nil, CopyResponse{}, fmt.Errorf("decode payload: %w", err)
+	}
+	return payload, CopyResponse{ID: resp.ID, RuleName: resp.RuleName, Type: resp.Type, Label: resp.Label}, nil
 }
 
 // ListSecrets returns cached secrets for selection.
@@ -263,6 +337,36 @@ func (s *Server) handle(conn net.Conn) {
 		return
 	}
 	switch req.Op {
+	case "fetch-last":
+		rec, ok := s.cache.GetLast()
+		if !ok {
+			if err := enc.Encode(response{OK: false, Error: "no secrets cached"}); err != nil {
+				return
+			}
+			return
+		}
+		payload := base64.StdEncoding.EncodeToString(rec.Original)
+		if err := enc.Encode(response{OK: true, ID: rec.ID, RuleName: rec.RuleName, Type: string(rec.Type), Label: rec.Label, Payload: payload}); err != nil {
+			return
+		}
+	case "fetch-id":
+		if req.ID == 0 {
+			if err := enc.Encode(response{OK: false, Error: "missing id"}); err != nil {
+				return
+			}
+			return
+		}
+		rec, ok := s.cache.Get(req.ID)
+		if !ok {
+			if err := enc.Encode(response{OK: false, Error: "secret not found"}); err != nil {
+				return
+			}
+			return
+		}
+		payload := base64.StdEncoding.EncodeToString(rec.Original)
+		if err := enc.Encode(response{OK: true, ID: rec.ID, RuleName: rec.RuleName, Type: string(rec.Type), Label: rec.Label, Payload: payload}); err != nil {
+			return
+		}
 	case "copy-last":
 		rec, ok := s.cache.GetLast()
 		if !ok {

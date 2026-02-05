@@ -12,12 +12,15 @@ import (
 	"path/filepath"
 	"strings"
 	"syscall"
+	"time"
 
 	"github.com/creack/pty"
 	"github.com/suryansh-23/secretty/internal/debug"
 	"golang.org/x/sys/unix"
 	"golang.org/x/term"
 )
+
+const copyDrainTimeout = 750 * time.Millisecond
 
 // Options controls PTY execution behavior.
 type Options struct {
@@ -80,7 +83,13 @@ func RunCommand(ctx context.Context, cmd *exec.Cmd, opts Options) (int, error) {
 	if err := closeOutput(out); err != nil && opts.Logger != nil {
 		opts.Logger.Infof("ptywrap: close_output_failed=%v", err)
 	}
-	<-errCh
+	select {
+	case <-errCh:
+	case <-time.After(copyDrainTimeout):
+		if opts.Logger != nil {
+			opts.Logger.Infof("ptywrap: output_drain_timeout=%s", copyDrainTimeout)
+		}
+	}
 
 	if waitErr == nil {
 		return 0, nil

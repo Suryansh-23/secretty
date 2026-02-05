@@ -268,10 +268,15 @@ func (s *Stream) updatePlainTail(plain []byte) {
 }
 
 func trimMatches(matches []Match, trim int, total int) []Match {
-	if trim <= 0 {
-		return matches
+	if len(matches) == 0 {
+		return nil
 	}
-	out := matches[:0]
+	if trim <= 0 {
+		out := make([]Match, len(matches))
+		copy(out, matches)
+		return out
+	}
+	out := make([]Match, 0, len(matches))
 	for _, m := range matches {
 		start := m.Start - trim
 		end := m.End - trim
@@ -301,7 +306,7 @@ func filterMatchesNewBytes(matches []Match, start int) []Match {
 	if len(matches) == 0 {
 		return nil
 	}
-	out := matches[:0]
+	out := make([]Match, 0, len(matches))
 	for _, m := range matches {
 		if m.End <= start {
 			continue

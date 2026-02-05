@@ -152,8 +152,20 @@ func runCopyLast(state *appState) error {
 
 func copyLast(state *appState) (copyResult, error) {
 	if socketPath := os.Getenv("SECRETTY_SOCKET"); socketPath != "" {
-		resp, err := ipc.CopyLast(socketPath)
+		payload, resp, err := ipc.FetchLast(socketPath)
 		if err != nil {
+			if errors.Is(err, ipc.ErrUnsupportedOperation) {
+				return copyResult{}, errors.New("copy last requires a refreshed SecreTTY wrapper; restart your shell or run `secretty shell` again")
+			}
+			return copyResult{}, err
+		}
+		if len(payload) == 0 {
+			return copyResult{}, errors.New("empty payload from copy cache")
+		}
+		if err := clipboard.CopyBytes(state.cfg.Overrides.CopyWithoutRender.Backend, payload); err != nil {
+			return copyResult{}, err
+		}
+		if err := verifyClipboard(state, payload); err != nil {
 			return copyResult{}, err
 		}
 		return copyResult{ID: resp.ID, Label: resp.Label, RuleName: resp.RuleName, Type: types.SecretType(resp.Type)}, nil
@@ -168,13 +180,28 @@ func copyLast(state *appState) (copyResult, error) {
 	if err := clipboard.CopyBytes(state.cfg.Overrides.CopyWithoutRender.Backend, record.Original); err != nil {
 		return copyResult{}, err
 	}
+	if err := verifyClipboard(state, record.Original); err != nil {
+		return copyResult{}, err
+	}
 	return copyResult{ID: record.ID, Label: record.Label, RuleName: record.RuleName, Type: record.Type}, nil
 }
 
 func copyByID(state *appState, id int) (copyResult, error) {
 	if socketPath := os.Getenv("SECRETTY_SOCKET"); socketPath != "" {
-		resp, err := ipc.CopyByID(socketPath, id)
+		payload, resp, err := ipc.FetchByID(socketPath, id)
 		if err != nil {
+			if errors.Is(err, ipc.ErrUnsupportedOperation) {
+				return copyResult{}, errors.New("copy pick requires a refreshed SecreTTY wrapper; restart your shell or run `secretty shell` again")
+			}
+			return copyResult{}, err
+		}
+		if len(payload) == 0 {
+			return copyResult{}, errors.New("empty payload from copy cache")
+		}
+		if err := clipboard.CopyBytes(state.cfg.Overrides.CopyWithoutRender.Backend, payload); err != nil {
+			return copyResult{}, err
+		}
+		if err := verifyClipboard(state, payload); err != nil {
 			return copyResult{}, err
 		}
 		return copyResult{ID: resp.ID, Label: resp.Label, RuleName: resp.RuleName, Type: types.SecretType(resp.Type)}, nil
@@ -187,6 +214,9 @@ func copyByID(state *appState, id int) (copyResult, error) {
 		return copyResult{}, errors.New("secret not found")
 	}
 	if err := clipboard.CopyBytes(state.cfg.Overrides.CopyWithoutRender.Backend, record.Original); err != nil {
+		return copyResult{}, err
+	}
+	if err := verifyClipboard(state, record.Original); err != nil {
 		return copyResult{}, err
 	}
 	return copyResult{ID: record.ID, Label: record.Label, RuleName: record.RuleName, Type: record.Type}, nil
@@ -261,4 +291,14 @@ func printCopyResult(state *appState, resp copyResult) {
 		return
 	}
 	fmt.Printf("Copied %s to clipboard\n", label)
+}
+
+func verifyClipboard(state *appState, payload []byte) error {
+	if os.Getenv("SECRETTY_COPY_VERIFY") == "" {
+		return nil
+	}
+	if err := clipboard.VerifyBytes(state.cfg.Overrides.CopyWithoutRender.Backend, payload); err != nil {
+		return fmt.Errorf("clipboard verification failed: %w", err)
+	}
+	return nil
 }

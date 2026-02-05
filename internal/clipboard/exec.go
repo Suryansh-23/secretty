@@ -38,3 +38,19 @@ func runCopyCommand(command string, args []string, data []byte) error {
 	}
 	return nil
 }
+
+func runPasteCommand(command string, args []string) ([]byte, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), copyTimeout)
+	defer cancel()
+
+	cmd := execCommand(ctx, command, args...)
+	var stdout bytes.Buffer
+	cmd.Stdout = &stdout
+	if err := cmd.Run(); err != nil {
+		if ctx.Err() != nil {
+			return nil, fmt.Errorf("%s timeout: %w", command, ctx.Err())
+		}
+		return nil, fmt.Errorf("%s run: %w", command, err)
+	}
+	return stdout.Bytes(), nil
+}

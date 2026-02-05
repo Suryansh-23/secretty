@@ -1,6 +1,7 @@
 package clipboard
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"os/exec"
@@ -31,6 +32,25 @@ func CopyBytes(backend string, data []byte) error {
 		return errors.New("clipboard disabled")
 	}
 	return copyBytes(resolved, data)
+}
+
+// VerifyBytes checks whether the clipboard matches the expected payload.
+func VerifyBytes(backend string, expected []byte) error {
+	resolved, err := ResolveBackend(backend)
+	if err != nil {
+		return err
+	}
+	if resolved == BackendNone {
+		return errors.New("clipboard disabled")
+	}
+	actual, err := pasteBytes(resolved)
+	if err != nil {
+		return err
+	}
+	if !bytes.Equal(actual, expected) {
+		return errors.New("clipboard verification failed")
+	}
+	return nil
 }
 
 // ResolveBackend converts a backend string into a concrete backend.
