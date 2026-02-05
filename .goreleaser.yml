@@ -12,6 +12,11 @@ builds:
       - arm64
     env:
       - CGO_ENABLED=0
+    ldflags:
+      - -s -w
+      - -X github.com/suryansh-23/secretty/cmd/secretty.version={{ .Version }}
+      - -X github.com/suryansh-23/secretty/cmd/secretty.commit={{ .Commit }}
+      - -X github.com/suryansh-23/secretty/cmd/secretty.date={{ .Date }}
 
 archives:
   - id: default

@@ -75,6 +75,7 @@ Binary output: `bin/secretty`
 ./bin/secretty copy pick
 ./bin/secretty status
 ./bin/secretty doctor
+./bin/secretty version
 ```
 
 `secretty status` prints whether the current shell is wrapped (`SECRETTY_WRAPPED=1`) and whether IPC is available. `secretty copy` requires a subcommand (`last` or `pick`).

@@ -61,6 +61,7 @@ func newRootCmd(state *appState) *cobra.Command {
 	rootCmd.AddCommand(newCopyCmd(state))
 	rootCmd.AddCommand(newStatusCmd(state))
 	rootCmd.AddCommand(newDoctorCmd(state))
+	rootCmd.AddCommand(newVersionCmd())
 
 	return rootCmd
 }
