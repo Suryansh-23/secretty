@@ -16,10 +16,11 @@ jobs:
         with:
           go-version: '1.24.x'
       - run: go mod tidy
-      - uses: golangci/golangci-lint-action@v6
-        with:
-          version: v1.62.2
-          install-mode: "go"
-          args: --timeout=2m ./cmd/... ./internal/...
+      - name: Install golangci-lint
+        run: |
+          echo "$PWD/bin" >> "$GITHUB_PATH"
+          GOBIN="$PWD/bin" go install github.com/golangci/golangci-lint/cmd/golangci-lint@v1.62.2
+      - name: Lint
+        run: golangci-lint run --timeout=2m ./cmd/... ./internal/...
       - run: make test
       - run: make vet
