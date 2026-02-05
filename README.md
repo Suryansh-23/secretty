@@ -148,6 +148,10 @@ overrides:
     require_confirm: true
     backend: auto
 
+allowlist:
+  enabled: false
+  commands: []
+
 rulesets:
   web3:
     enabled: true
@@ -222,6 +226,23 @@ debug:
 
 Note: the default config ships with additional API key, JWT, AWS, and password rules. See `internal/config/testdata/canonical.yaml` for the full set.
 Linux clipboard support requires `wl-copy` (Wayland) or `xclip`/`xsel` (X11). If you are in a headless session, set `overrides.copy_without_render.enabled=false` or `backend: none`.
+
+## Allowlist (skip redaction)
+
+You can bypass redaction for specific commands executed via `secretty run --` or `secretty shell -- <cmd>`.
+Entries match the command basename by default, support glob patterns, and may be full paths.
+
+```yaml
+allowlist:
+  enabled: true
+  commands:
+    - "ssh"
+    - "vim"
+    - "kubectl*"
+    - "/usr/bin/less"
+```
+
+When a command is allowlisted, SecreTTY does not redact output, emit status lines, or cache secrets for `copy`.
 
 ## Development
 
