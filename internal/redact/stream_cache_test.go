@@ -21,7 +21,7 @@ func TestInteractiveCacheStoresSecretWithTail(t *testing.T) {
 
 	out := &bytes.Buffer{}
 	secretCache := cache.New(64, 30*time.Second)
-	stream := redact.NewStream(out, cfg, detect.NewEngine(cfg), secretCache, nil)
+	stream := redact.NewStream(out, cfg, detect.NewEngine(cfg), secretCache, nil, nil)
 
 	if _, err := stream.Write([]byte("prefix output\n")); err != nil {
 		t.Fatalf("write prefix: %v", err)

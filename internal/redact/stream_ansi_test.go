@@ -19,7 +19,7 @@ func TestInteractiveAnsiAwareDetection(t *testing.T) {
 	cfg.Rulesets.APIKeys.Enabled = true
 
 	out := &bytes.Buffer{}
-	stream := redact.NewStream(out, cfg, detect.NewEngine(cfg), nil, nil)
+	stream := redact.NewStream(out, cfg, detect.NewEngine(cfg), nil, nil, nil)
 
 	input := []byte("GITHUB_API_KEY=\x1b[31mghp_0123456789ABCDEFGHijklmnopqrstuvwx\x1b[0m\n")
 	if _, err := stream.Write(input); err != nil {
@@ -46,7 +46,7 @@ func TestInteractiveSplitWriteRedaction(t *testing.T) {
 	cfg.Rulesets.Web3.Enabled = true
 
 	out := &bytes.Buffer{}
-	stream := redact.NewStream(out, cfg, detect.NewEngine(cfg), nil, nil)
+	stream := redact.NewStream(out, cfg, detect.NewEngine(cfg), nil, nil, nil)
 
 	part1 := []byte("PRIVATE_KEY=\x1b[38;5;81m" + strings.Repeat("a", 12))
 	part2 := []byte(strings.Repeat("a", 52) + "\x1b[0m\n")

@@ -24,9 +24,10 @@ const copyDrainTimeout = 750 * time.Millisecond
 
 // Options controls PTY execution behavior.
 type Options struct {
-	RawMode bool
-	Output  io.Writer
-	Logger  *debug.Logger
+	RawMode       bool
+	Output        io.Writer
+	Logger        *debug.Logger
+	InputObserver func([]byte)
 }
 
 // RunCommand starts cmd under a PTY and proxies IO.
@@ -74,7 +75,7 @@ func RunCommand(ctx context.Context, cmd *exec.Cmd, opts Options) (int, error) {
 	defer cancel()
 
 	errCh := make(chan error, 1)
-	go copyInput(ctx, ptmx, os.Stdin, opts.Logger)
+	go copyInput(ctx, ptmx, os.Stdin, opts.Logger, opts.InputObserver)
 	go copyWithContext(ctx, out, ptmx, errCh)
 
 	waitErr := cmd.Wait()
@@ -271,7 +272,7 @@ func closeOutput(out io.Writer) error {
 	return nil
 }
 
-func copyInput(ctx context.Context, dst *os.File, src io.Reader, logger *debug.Logger) {
+func copyInput(ctx context.Context, dst *os.File, src io.Reader, logger *debug.Logger, observer func([]byte)) {
 	reader := bufio.NewReader(src)
 	filter := newResponseFilter(responseDrainWindow)
 	buf := make([]byte, 4096)
@@ -294,6 +295,9 @@ func copyInput(ctx context.Context, dst *os.File, src io.Reader, logger *debug.L
 						}
 						return
 					}
+					if observer != nil {
+						observer(filtered)
+					}
 				}
 			} else {
 				if pending := filter.Flush(); len(pending) > 0 {
@@ -303,12 +307,18 @@ func copyInput(ctx context.Context, dst *os.File, src io.Reader, logger *debug.L
 						}
 						return
 					}
+					if observer != nil {
+						observer(pending)
+					}
 				}
 				if _, err := dst.Write(chunk); err != nil {
 					if logger != nil {
 						logger.Infof("ptywrap: stdin_write_error=%v", err)
 					}
 					return
+				}
+				if observer != nil {
+					observer(chunk)
 				}
 			}
 		}
@@ -319,6 +329,9 @@ func copyInput(ctx context.Context, dst *os.File, src io.Reader, logger *debug.L
 						logger.Infof("ptywrap: stdin_write_error=%v", writeErr)
 					}
 					return
+				}
+				if observer != nil {
+					observer(pending)
 				}
 			}
 			if logger != nil && !errors.Is(err, io.EOF) {

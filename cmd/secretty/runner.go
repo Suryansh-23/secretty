@@ -20,18 +20,19 @@ import (
 	"github.com/suryansh-23/secretty/internal/ipc"
 	"github.com/suryansh-23/secretty/internal/ptywrap"
 	"github.com/suryansh-23/secretty/internal/redact"
+	"github.com/suryansh-23/secretty/internal/sessioncontrol"
 	"github.com/suryansh-23/secretty/internal/types"
 	"github.com/suryansh-23/secretty/internal/ui"
 )
 
-func startIPCServer(cfg config.Config, cache *cache.Cache) (string, func(), error) {
-	if cache == nil {
-		return "", nil, nil
+func startIPCServer(cfg config.Config, cache *cache.Cache, pause *sessioncontrol.Controller) (string, func(), error) {
+	copyEnabled := cache != nil &&
+		cfg.Overrides.CopyWithoutRender.Enabled &&
+		(cfg.Mode != types.ModeStrict || !cfg.Strict.DisableCopyOriginal)
+	if !copyEnabled {
+		cache = nil
 	}
-	if !cfg.Overrides.CopyWithoutRender.Enabled {
-		return "", nil, nil
-	}
-	if cfg.Mode == types.ModeStrict && cfg.Strict.DisableCopyOriginal {
+	if cache == nil && pause == nil {
 		return "", nil, nil
 	}
 	socketPath, err := ipc.TempSocketPath()
@@ -40,7 +41,7 @@ func startIPCServer(cfg config.Config, cache *cache.Cache) (string, func(), erro
 	}
 	server, err := ipc.StartServer(socketPath, cache, func(payload []byte) error {
 		return clipboard.CopyBytes(cfg.Overrides.CopyWithoutRender.Backend, payload)
-	})
+	}, pause)
 	if err != nil {
 		_ = os.Remove(socketPath)
 		return "", nil, err
@@ -68,18 +69,19 @@ func runWithPTY(ctx context.Context, cfg config.Config, cfgPath string, command 
 	}
 	cleanup := func() {}
 	cacheForRun := cache
+	var pauseCtrl *sessioncontrol.Controller
 	if bypass {
 		cacheForRun = nil
+	} else if interactive {
+		pauseCtrl = sessioncontrol.NewController()
 	}
-	if cacheForRun != nil {
-		socketPath, closeFn, err := startIPCServer(cfg, cacheForRun)
-		if err != nil {
-			fmt.Fprintln(os.Stderr, "secretty: copy cache unavailable:", err)
-		} else if socketPath != "" {
-			command.Env = append(command.Env, "SECRETTY_SOCKET="+socketPath)
-			if closeFn != nil {
-				cleanup = closeFn
-			}
+	socketPath, closeFn, err := startIPCServer(cfg, cacheForRun, pauseCtrl)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "secretty: session controls unavailable:", err)
+	} else if socketPath != "" {
+		command.Env = append(command.Env, "SECRETTY_SOCKET="+socketPath)
+		if closeFn != nil {
+			cleanup = closeFn
 		}
 	}
 	defer cleanup()
@@ -92,12 +94,17 @@ func runWithPTY(ctx context.Context, cfg config.Config, cfgPath string, command 
 	var output io.Writer = os.Stdout
 	if !bypass {
 		detector := detect.NewEngine(cfg)
-		output = redact.NewStream(os.Stdout, cfg, detector, cacheForRun, logger)
+		output = redact.NewStream(os.Stdout, cfg, detector, cacheForRun, logger, pauseCtrl)
+	}
+	var inputObserver func([]byte)
+	if interactive && pauseCtrl != nil {
+		inputObserver = commandLineObserver(pauseCtrl)
 	}
 	exitCode, err := ptywrap.RunCommand(ctx, command, ptywrap.Options{
-		RawMode: true,
-		Output:  output,
-		Logger:  logger,
+		RawMode:       true,
+		Output:        output,
+		Logger:        logger,
+		InputObserver: inputObserver,
 	})
 	if err != nil {
 		return err
@@ -106,6 +113,29 @@ func runWithPTY(ctx context.Context, cfg config.Config, cfgPath string, command 
 		return &exitCodeError{code: exitCode}
 	}
 	return nil
+}
+
+func commandLineObserver(ctrl *sessioncontrol.Controller) func([]byte) {
+	if ctrl == nil {
+		return nil
+	}
+	previousWasCR := false
+	return func(p []byte) {
+		for _, b := range p {
+			switch b {
+			case '\r':
+				ctrl.ConsumeCommandLine()
+				previousWasCR = true
+			case '\n':
+				if !previousWasCR {
+					ctrl.ConsumeCommandLine()
+				}
+				previousWasCR = false
+			default:
+				previousWasCR = false
+			}
+		}
+	}
 }
 
 func showWrapBanner(badge ui.Badge) {

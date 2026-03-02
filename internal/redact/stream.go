@@ -36,10 +36,16 @@ type Stream struct {
 	statusRateLimit time.Duration
 	lastStatus      time.Time
 	altScreen       bool
+	pauseGate       PauseGate
+}
+
+// PauseGate reports whether redaction should currently be paused.
+type PauseGate interface {
+	IsPausedNow() bool
 }
 
 // NewStream returns a streaming redactor writer.
-func NewStream(out io.Writer, cfg config.Config, detector Detector, secretCache *cache.Cache, logger *debug.Logger) *Stream {
+func NewStream(out io.Writer, cfg config.Config, detector Detector, secretCache *cache.Cache, logger *debug.Logger, pauseGate PauseGate) *Stream {
 	if detector == nil {
 		detector = NoopDetector{}
 	}
@@ -71,11 +77,28 @@ func NewStream(out io.Writer, cfg config.Config, detector Detector, secretCache 
 		logger:          logger,
 		statusEnabled:   statusEnabled,
 		statusRateLimit: statusRateLimit,
+		pauseGate:       pauseGate,
 	}
 }
 
 // Write processes input bytes and writes redacted output.
 func (s *Stream) Write(p []byte) (int, error) {
+	if s.isPaused() {
+		if err := s.flushBufferedRedacted(); err != nil {
+			return 0, err
+		}
+		s.plainTail = nil
+		segments := s.tokenizer.Push(p)
+		for _, seg := range segments {
+			if seg.Kind == ansi.SegmentEscape {
+				s.updateAltScreen(seg.Bytes)
+			}
+			if _, err := s.out.Write(seg.Bytes); err != nil {
+				return 0, err
+			}
+		}
+		return len(p), nil
+	}
 	segments := s.tokenizer.Push(p)
 	if s.windowSize == 0 {
 		if err := s.writeInteractiveSegments(segments); err != nil {
@@ -115,6 +138,10 @@ func (s *Stream) Flush() error {
 		s.plainTail = nil
 		return nil
 	}
+	return s.flushBufferedRedacted()
+}
+
+func (s *Stream) flushBufferedRedacted() error {
 	if len(s.buffer) == 0 {
 		return nil
 	}
@@ -132,6 +159,10 @@ func (s *Stream) Flush() error {
 	s.maybeEmitStatus(matches, redacted)
 	s.buffer = nil
 	return nil
+}
+
+func (s *Stream) isPaused() bool {
+	return s.pauseGate != nil && s.pauseGate.IsPausedNow()
 }
 
 func (s *Stream) processText(text []byte) error {
