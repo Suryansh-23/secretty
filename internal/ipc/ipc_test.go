@@ -161,8 +161,12 @@ func TestPauseUnknownOperationMapsToUnsupported(t *testing.T) {
 		defer func() { _ = conn.Close() }()
 
 		var req request
-		_ = json.NewDecoder(conn).Decode(&req)
-		_ = json.NewEncoder(conn).Encode(response{OK: false, Error: "unknown operation"})
+		if err := json.NewDecoder(conn).Decode(&req); err != nil {
+			return
+		}
+		if err := json.NewEncoder(conn).Encode(response{OK: false, Error: "unknown operation"}); err != nil {
+			return
+		}
 	}()
 
 	if _, err := callPause(socketPath, request{Op: "pause-status"}); !errors.Is(err, ErrUnsupportedOperation) {
