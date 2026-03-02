@@ -60,14 +60,19 @@ func newRootCmd(state *appState) *cobra.Command {
 	rootCmd.AddCommand(newInitCmd(&cfgPath))
 	rootCmd.AddCommand(newResetCmd(&cfgPath))
 	rootCmd.AddCommand(newCopyCmd(state))
+	rootCmd.AddCommand(newPauseCmd(state))
 	rootCmd.AddCommand(newStatusCmd(state))
 	rootCmd.AddCommand(newDoctorCmd(state))
 	rootCmd.AddCommand(newVersionCmd())
 
 	defaultHelp := rootCmd.HelpFunc()
 	rootCmd.SetHelpFunc(func(cmd *cobra.Command, args []string) {
-		fmt.Fprintln(cmd.OutOrStdout(), ui.LogoStatic(currentBadge()))
-		fmt.Fprintln(cmd.OutOrStdout())
+		if _, err := fmt.Fprintln(cmd.OutOrStdout(), ui.LogoStatic(currentBadge())); err != nil {
+			return
+		}
+		if _, err := fmt.Fprintln(cmd.OutOrStdout()); err != nil {
+			return
+		}
 		defaultHelp(cmd, args)
 	})
 

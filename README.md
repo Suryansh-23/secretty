@@ -73,12 +73,29 @@ Binary output: `bin/secretty`
 ./bin/secretty reset
 ./bin/secretty copy last
 ./bin/secretty copy pick
+./bin/secretty pause
+./bin/secretty pause --for 10m
+./bin/secretty pause --commands 5
+./bin/secretty pause --status
+./bin/secretty pause --resume
 ./bin/secretty status
 ./bin/secretty doctor
 ./bin/secretty version
 ```
 
 `secretty status` prints whether the current shell is wrapped (`SECRETTY_WRAPPED=1`) and whether IPC is available. `secretty copy` requires a subcommand (`last` or `pick`).
+
+### Pause redaction in wrapped sessions
+
+Use `secretty pause` inside an active wrapped shell (`SECRETTY_SOCKET` must be set) to temporarily bypass redaction:
+
+- `secretty pause` pauses for 3 minutes by default.
+- `secretty pause --for 30s|3m|1h` pauses by duration.
+- `secretty pause --commands N` pauses for the next `N` submitted command lines (best effort; line-based, not shell-AST exact).
+- `secretty pause --status` shows active pause state.
+- `secretty pause --resume` resumes redaction immediately.
+
+Pause scope is per wrapped session. Other shells are unaffected. In `strict` mode, pause is still allowed but weakens strict redaction guarantees while active.
 
 ## Releases
 

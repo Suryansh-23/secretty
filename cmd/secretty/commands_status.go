@@ -8,6 +8,8 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/suryansh-23/secretty/internal/config"
+	"github.com/suryansh-23/secretty/internal/ipc"
+	"github.com/suryansh-23/secretty/internal/sessioncontrol"
 )
 
 func newDoctorCmd(state *appState) *cobra.Command {
@@ -26,9 +28,23 @@ func newStatusCmd(state *appState) *cobra.Command {
 		Short: "Print SecreTTY wrapper status",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			wrapped := os.Getenv("SECRETTY_WRAPPED") != ""
-			socket := os.Getenv("SECRETTY_SOCKET") != ""
+			socketPath := os.Getenv("SECRETTY_SOCKET")
+			socket := socketPath != ""
 			fmt.Printf("wrapped=%t\n", wrapped)
 			fmt.Printf("ipc_socket=%t\n", socket)
+			if socket {
+				pauseStatus, err := ipc.PauseStatusQuery(socketPath)
+				if err == nil {
+					fmt.Printf("pause_active=%t\n", pauseStatus.Active)
+					fmt.Printf("pause_mode=%s\n", pauseStatus.Mode)
+					switch pauseStatus.Mode {
+					case sessioncontrol.ModeTime:
+						fmt.Printf("pause_remaining_seconds=%d\n", pauseStatus.RemainingSeconds)
+					case sessioncontrol.ModeCommands:
+						fmt.Printf("pause_remaining_commands=%d\n", pauseStatus.RemainingCommands)
+					}
+				}
+			}
 			if envCfg := strings.TrimSpace(os.Getenv("SECRETTY_CONFIG")); envCfg != "" {
 				fmt.Printf("config=%s\n", envCfg)
 			} else {
