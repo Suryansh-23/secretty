@@ -237,7 +237,7 @@ func maskGlow(original []byte, blockChar string, startIndex int, bandSize int) [
 	}
 	for i := 0; i < runes; i++ {
 		color := glowPalette[(startIndex+(i/bandSize))%len(glowPalette)]
-		out.WriteString(fmt.Sprintf("\x1b[38;2;%d;%d;%dm", color.r, color.g, color.b))
+		_, _ = fmt.Fprintf(&out, "\x1b[38;2;%d;%d;%dm", color.r, color.g, color.b)
 		out.WriteString(blockChar)
 	}
 	out.WriteString("\x1b[0m")

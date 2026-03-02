@@ -22,15 +22,19 @@ func newVersionCmd() *cobra.Command {
 		Short: "Print version information",
 		Args:  cobra.NoArgs,
 		Run: func(cmd *cobra.Command, args []string) {
-			fmt.Fprintln(cmd.OutOrStdout(), ui.LogoStatic(currentBadge()))
-			fmt.Fprintln(cmd.OutOrStdout())
+			if _, err := fmt.Fprintln(cmd.OutOrStdout(), ui.LogoStatic(currentBadge())); err != nil {
+				return
+			}
+			if _, err := fmt.Fprintln(cmd.OutOrStdout()); err != nil {
+				return
+			}
 			ver, rev, built := resolveVersion()
-			fmt.Printf("secretty %s\n", ver)
+			_, _ = fmt.Fprintf(cmd.OutOrStdout(), "secretty %s\n", ver)
 			if rev != "" && rev != "unknown" {
-				fmt.Printf("commit %s\n", rev)
+				_, _ = fmt.Fprintf(cmd.OutOrStdout(), "commit %s\n", rev)
 			}
 			if built != "" && built != "unknown" {
-				fmt.Printf("built %s\n", built)
+				_, _ = fmt.Fprintf(cmd.OutOrStdout(), "built %s\n", built)
 			}
 		},
 	}
