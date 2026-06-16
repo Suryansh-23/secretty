@@ -24,10 +24,11 @@ const copyDrainTimeout = 750 * time.Millisecond
 
 // Options controls PTY execution behavior.
 type Options struct {
-	RawMode       bool
-	Output        io.Writer
-	Logger        *debug.Logger
-	InputObserver func([]byte)
+	RawMode        bool
+	Output         io.Writer
+	Logger         *debug.Logger
+	InputObserver  func([]byte)
+	OutputObserver func([]byte)
 }
 
 // RunCommand starts cmd under a PTY and proxies IO.
@@ -75,8 +76,25 @@ func RunCommand(ctx context.Context, cmd *exec.Cmd, opts Options) (int, error) {
 	defer cancel()
 
 	errCh := make(chan error, 1)
+	// Observe the child's output for OSC 7 cwd reports and keep secretty's own
+	// working directory in sync, so parent terminals/multiplexers (e.g. tmux) see
+	// the child's real cwd instead of secretty's frozen launch dir. Composes with
+	// any caller-supplied OutputObserver.
+	outObserver := opts.OutputObserver
+	if !cwdSyncDisabled() {
+		cwdObserver := newCwdSyncObserver(opts.Logger)
+		if outObserver == nil {
+			outObserver = cwdObserver
+		} else {
+			userObserver := outObserver
+			outObserver = func(b []byte) {
+				userObserver(b)
+				cwdObserver(b)
+			}
+		}
+	}
 	go copyInput(ctx, ptmx, os.Stdin, opts.Logger, opts.InputObserver)
-	go copyWithContext(ctx, out, ptmx, errCh)
+	go copyWithContext(ctx, out, ptmx, errCh, outObserver)
 
 	waitErr := cmd.Wait()
 	cancel()
@@ -257,11 +275,37 @@ func setEnv(env []string, key, value string) []string {
 	return append(env, key+"="+value)
 }
 
-func copyWithContext(ctx context.Context, dst io.Writer, src io.Reader, errCh chan<- error) {
-	_, err := io.Copy(dst, src)
-	select {
-	case errCh <- err:
-	case <-ctx.Done():
+func copyWithContext(ctx context.Context, dst io.Writer, src io.Reader, errCh chan<- error, observer func([]byte)) {
+	if observer == nil {
+		_, err := io.Copy(dst, src)
+		select {
+		case errCh <- err:
+		case <-ctx.Done():
+		}
+		return
+	}
+	// Manual copy so we can hand each chunk to the observer (e.g. OSC 7 cwd sync)
+	// before forwarding it downstream. The observer must not mutate the bytes.
+	buf := make([]byte, 32*1024)
+	for {
+		n, rerr := src.Read(buf)
+		if n > 0 {
+			observer(buf[:n])
+			if _, werr := dst.Write(buf[:n]); werr != nil {
+				select {
+				case errCh <- werr:
+				case <-ctx.Done():
+				}
+				return
+			}
+		}
+		if rerr != nil {
+			select {
+			case errCh <- rerr:
+			case <-ctx.Done():
+			}
+			return
+		}
 	}
 }
 
